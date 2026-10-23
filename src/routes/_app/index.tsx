@@ -25,9 +25,9 @@ function DashboardPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Admin"
-        title="Home"
-        description="Companies, the ticket queue, and catalog orders."
+        eyebrow="Manage Tech Service"
+        title="Admin"
+        description="Companies, the ticket queue, the catalog, and orders."
         actions={
           <>
             <Link to="/tickets" search={ticketSearch()} className="inline-flex h-8 items-center rounded-lg bg-ink px-3 text-[13px] font-semibold text-white">

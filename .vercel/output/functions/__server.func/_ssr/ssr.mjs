@@ -1,6 +1,6 @@
 import { r as __exportAll$1 } from "../_runtime.mjs";
 import { n as require_react } from "../_libs/@radix-ui/react-compose-refs+[...].mjs";
-import { A as toCrossJSONStream, B as invariant, D as fromJSON, F as resolveManifestAssetLink, I as resolveManifestCssLink, J as rootRouteId, K as isRedirect, L as waitForReason, N as getScriptPreloadAttrs, P as getStylesheetHref, R as _getRenderedMatches, U as isDangerousProtocol, W as isPromise, Y as isNotFound, a as isSsrResponse, c as stripSsrResponseBody, i as disposeSsrResponse, k as toCrossJSONAsync, m as RouterProvider, n as bindSsrResponseToRequest, o as normalizeSsrResponse, q as parseRedirect, r as defineHandlerCallback, s as replaceSsrResponse, t as renderRouterToStream, z as executeRewriteInput } from "../_libs/@tanstack/react-router+[...].mjs";
+import { A as toCrossJSONAsync, B as executeRewriteInput, F as getStylesheetHref, G as isPromise, I as resolveManifestAssetLink, J as parseRedirect, L as resolveManifestCssLink, O as fromJSON, P as getScriptPreloadAttrs, R as waitForReason, V as invariant, W as isDangerousProtocol, X as isNotFound, Y as rootRouteId, a as isSsrResponse, c as stripSsrResponseBody, i as disposeSsrResponse, j as toCrossJSONStream, m as RouterProvider, n as bindSsrResponseToRequest, o as normalizeSsrResponse, q as isRedirect, r as defineHandlerCallback, s as replaceSsrResponse, t as renderRouterToStream, z as _getRenderedMatches } from "../_libs/@tanstack/react-router+[...].mjs";
 import { n as createServerHistory } from "../_libs/tanstack__history.mjs";
 import { a as defaultSerovalDeserializerPlugins, i as createRawStreamRPCPlugin, n as attachRouterServerSsrUtils, o as makeSerovalPlugin, r as getNormalizedURL, s as createSerializationAdapter, t as mergeHeaders } from "../_libs/@tanstack/router-core+[...].mjs";
 import { n as require_jsx_runtime } from "../_libs/radix-ui__react-context+react.mjs";
@@ -134,7 +134,7 @@ var HEADERS = { TSS_SHELL: "X-TSS_SHELL" };
 * the dev styles URL for route-scoped CSS collection.
 */
 async function getStartManifest(matchedRoutes) {
-	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-CiJn2MvQ.mjs");
+	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-5lTf5y6i.mjs");
 	const startManifest = tsrStartManifest();
 	let routes = startManifest.routes;
 	routes[rootRouteId];
@@ -156,131 +156,187 @@ async function getStartManifest(matchedRoutes) {
 var manifest = {
 	"039e73ecb7b770fd06ca72d4dd05126cc1107c36ed79939ac642d1c75b0b9549": {
 		functionName: "saveIntegration_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"19ad874d40be191851943cd0742210b04365886e52ed9a5b0313fd7e1556fafe": {
 		functionName: "linkOrderTicket_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"225663cb1bb354603c205d5aabd6a5459388309ad5b5aa1cc93b0b72913dc023": {
+		functionName: "savePayments_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"232a25774506ba82cea2e255080fc9efafaa2fa8e9a845ab20d3a5fb6d6eb618": {
 		functionName: "getPeople_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"2444a9daa5bdee0aa8bad40ecac51400b55a10983502f68e6bcfeaedd89c4aee": {
+		functionName: "getShopCheckout_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"2811f80dd615bd5d4c4435f679121e304e6b7e4ae9b6da5b60cdf3b1a4df2ab2": {
 		functionName: "listPolicies_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"2f84c8ccf973926d40b951049a6a795b28384fecc69bbc024dbd0625b2fa66d9": {
+		functionName: "saveShopProfile_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"33566ad32bac51299c67cf4c015d83da54b46db4a6ca2c11a6b6132ff080f94c": {
 		functionName: "saveForm_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"38afa57349a8410b70ad520028e233a2fc20ba16edbf8a32e82ad41a833184c8": {
+		functionName: "getShopAccount_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"3f30520125428c05602f315273312b8a15eee718a92a5af4748653977e75b589": {
 		functionName: "getShell_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"418c0f1e1a743693f9818c0fa3a0a5d88c422f497823edd34de53215bedfbd35": {
 		functionName: "saveOrg_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"45e81e25d62f6095d14f3de49f21278e58c08d05748828c68c5c3c925994a191": {
+		functionName: "importProducts_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"4a674cd9b9a1c8fa62fa2f63958614f12ca20d1de8364be501d5607b0174770d": {
 		functionName: "removeProduct_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"4a80509859e38f16a6df04b02480fa29987bad92a917963f03201d814a6a56df": {
 		functionName: "saveCustomer_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"4adceff40dbb5d9b2ea595bcf4ab2c6e92b7fe74e73108bf1f85e2a365176b14": {
 		functionName: "getTicket_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"4fbe74b4be576658496e247d516ea505284bbe0f38aff11191be8ca286b160ce": {
 		functionName: "listOrgs_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"5745ee98f006b7faf92a1bc4397e11590b20a2526db8579e3e2094f9a67dbbe5": {
 		functionName: "updateTicket_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"5b73ba21e97c8dad3c8ec2284acf2248c024c6a0be0fbd07abde9efcb935e5f5": {
+		functionName: "testPayments_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"62beba8a04e9f66641d4e6f42ae1724ce382e7d5b742d5a63659c53f8e81676f": {
+		functionName: "shopRegister_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"62d5a17b50ad151ca9ad632360b484b9338217ef1cbf03b4906c1f95b5c61b2c": {
 		functionName: "getSettings_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"72d38b4e1c78504ef4b98122d058ed8f7eb0f96a26b270a4da09f895640f0b62": {
 		functionName: "createOrder_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"8267b9b43d81ff77f996791a832672ab18dedee21e7104a4debb5d87677dc705": {
 		functionName: "testIntegration_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"831f84a019fab8dbd63d43c67e9a251b3d70bfbe081fa76acaf0e33db552ab25": {
 		functionName: "listOrders_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"8fc8c591f3586970bd83eebfb0f17f9a574bc871aa0a60fad52a0b01589563bf": {
 		functionName: "listTickets_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"ac50fa25a8c0af214c48b56e2b0b07ed7496ef6c0e0bc82e42fa187a6b973ddd": {
+		functionName: "refreshAlternativeOrder_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"af4de7546fdba97335a36bf244736651e02e56040a542e4d8626b1a6938c0137": {
 		functionName: "getIntegration_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"b0e1e288e1f670a85f294c653c0de13e892bedc014c6ac62dee675c698fc6a1a": {
 		functionName: "replyTicket_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"b0f379b93ca9398d5e1a4acccb7adc4ce9e00add400f24ff4afd1298806bf9ac": {
 		functionName: "saveSettings_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"b8a8e07cb55604bc37b9e39b903a2f687bbef309a8c2d4d5427e8ef4df807382": {
 		functionName: "listForms_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"bb2b538133ede151b6fe4b4b094400ad002c31b110d59bd68450c339801704bb": {
 		functionName: "saveStaff_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"be47dfa17f463fbc61a2a072b0aaaa230867d9fe47c5118e17df31be541667b3": {
+		functionName: "shopLogout_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"bff56ee0338820f149806a5679ea1867d0ee6ff1080722d2dcd1fb01b77afa9a": {
 		functionName: "savePolicy_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"c115b8940b8a58256bd3f466da852cb9acb7532ab6385b8a57f40498fee5711d": {
 		functionName: "getOrder_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"c3af807360839902a06252eb3c0eeb62f3fe3187e2d913498d4b4f3b94eb2376": {
 		functionName: "saveProduct_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"c66c27b00ab4372a9b30c9c26822c913f782ecdf4dc9681d32499b38af81ad3e": {
+		functionName: "shopLogin_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"cb2ab385cfd834099b031a34d4128fc790f7111f4d4082652e985dad027dad0f": {
 		functionName: "reviewRequest_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"db77de5565864615cf86e0700205113a8803b82964fde96f76c4a8aa8d167062": {
 		functionName: "syncZendesk_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"dfaa658b4c2fce2c8aac4fba6f146d0ddd01dc410e260030ad8cd5570345adaa": {
+		functionName: "getPayments_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"e002bfeae19e89322e5bda5a5d1981718c1ac500764589e5558f116614fe1bf2": {
+		functionName: "getStorefront_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"e11cfcd4ab1992da649de8b88723932e1f58799e9fe3b16826626dcbe17fd43c": {
 		functionName: "listProducts_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"e4757ece97cc9d09404e3b5af23b1650f02f5f8e84a5fee0edf33befa441c5dc": {
 		functionName: "getDashboard_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"e4ddc06d2ec61b5cbd56f561d7961a7fde0d8f395472983bbfe965eeadc48814": {
 		functionName: "testForm_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"e83e5ac0f5c822bd05d3ae44dca014fb2cf4db09c717579c103ca29f85bb716c": {
+		functionName: "placeStorefrontOrder_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"e8753131772855b6687893f6be22770d2601ad7ac111e01c082caf03596aa957": {
 		functionName: "updateOrder_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	},
 	"f0aed5deacb7fe81e5d9ad3ee604664b02c2f90fa43d049b98963e1fdf9cf62a": {
 		functionName: "getOrg_createServerFn_handler",
-		importer: () => import("./api-DDgGioSY.mjs")
+		importer: () => import("./api-Bk_-m2dC.mjs")
+	},
+	"f4c15876b91381be1a1a5430cc4e73bb3e7e5629b928e57536f1869b91f20f15": {
+		functionName: "testAlternative_createServerFn_handler",
+		importer: () => import("./api-Bk_-m2dC.mjs")
 	}
 };
 async function getServerFnById(id, access) {
@@ -1685,7 +1741,7 @@ var getBaseManifest = getProdBaseManifest;
 var createEarlyHintsForRequest = createEarlyHintsCollector;
 async function loadEntries() {
 	const [routerEntry, startEntry, pluginAdapters] = await Promise.all([
-		import("./router-29RYm-xQ.mjs").then((n) => n.t),
+		import("./router-BdeEeSvI.mjs").then((n) => n.t),
 		import("./start-5Z2QO8AU.mjs"),
 		import("./empty-plugin-adapters-D9UWiqvJ.mjs")
 	]);

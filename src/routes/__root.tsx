@@ -11,8 +11,8 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Manage Tech Service" },
-      { name: "description", content: "Manage Tech Service admin for companies, Zendesk tickets, the catalog, and orders." },
+      { title: "Manage Tech Service Admin" },
+      { name: "description", content: "Admin for companies, tickets, the catalog, orders, and payments." },
       { name: "theme-color", content: "#f1f1f1" },
     ],
     links: [

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SplatRouteImport } from './routes/$'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
@@ -31,6 +32,11 @@ import { Route as StoreSlugSkuRouteImport } from './routes/store/$slug/$sku'
 import { Route as StoreSlugAccountRouteImport } from './routes/store/$slug/account'
 import { Route as StoreSlugCheckoutRouteImport } from './routes/store/$slug/checkout'
 
+const SplatRoute = SplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
@@ -137,6 +143,7 @@ const StoreSlugCheckoutRoute = StoreSlugCheckoutRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
+  '/$': typeof SplatRoute
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/forms': typeof AppFormsRoute
@@ -159,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/store/$slug/': typeof StoreSlugIndexRoute
 }
 export interface FileRoutesByTo {
+  '/$': typeof SplatRoute
   '/login': typeof LoginRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
@@ -182,6 +190,7 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/$': typeof SplatRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/forms': typeof AppFormsRoute
@@ -207,6 +216,7 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
+    | '/$'
     | '/'
     | '/login'
     | '/forms'
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/store/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/$'
     | '/login'
     | '/forms'
     | '/integrations'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/store/$slug'
   id:
     | '__root__'
+    | '/$'
     | '/_app'
     | '/login'
     | '/_app/forms'
@@ -275,6 +287,7 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  SplatRoute: typeof SplatRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -286,6 +299,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/$': {
+      id: '/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof SplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app': {
       id: '/_app'
       path: ''
@@ -473,6 +493,7 @@ const AppRouteChildren: AppRouteChildren = {
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
+  SplatRoute: SplatRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
