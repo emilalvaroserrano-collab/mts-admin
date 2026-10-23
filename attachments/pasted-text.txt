@@ -1,0 +1,157 @@
+ManageTechService — Admin Portal
+
+Full Implementation To-Do
+
+Framework: Next.js + TypeScript
+UI: shadcn/ui + Tailwind CSS
+Hosting: Vercel
+Database: Neon PostgreSQL
+Ticketing: Zendesk REST API
+Authentication: Microsoft, Google, Email
+
+---
+
+1. Admin Dashboard
+
+- [ ] Dashboard overview
+- [ ] Total customer organizations
+- [ ] Total registered customers
+- [ ] Open, pending, and resolved ticket statistics
+- [ ] Recent support tickets
+- [ ] Pending orders
+- [ ] Recent order activity
+- [ ] Quick links to Tickets, Customers, and Orders
+
+2. Ticket Management
+
+All support tickets are managed through the existing Zendesk system.
+
+- [ ] Display Zendesk ticket list
+- [ ] View all unresolved tickets
+- [ ] View new tickets
+- [ ] View pending tickets
+- [ ] View solved and closed tickets
+- [ ] Open ticket details
+- [ ] View customer information
+- [ ] View ticket conversation
+- [ ] Add public replies and internal notes, based on agent permissions
+- [ ] Update ticket status
+- [ ] Assign tickets to support agents
+- [ ] Filter tickets by company, status, category, and assignee
+- [ ] Search tickets by ID or subject
+- [ ] Support existing Zendesk views, including Pending Projects, Pending Orders, and Need Invoice
+- [ ] Preserve existing Zendesk tags and workflows
+
+3. Customer Organization Management
+
+- [ ] View customer companies
+- [ ] Add and edit company profiles
+- [ ] Associate users with their companies
+- [ ] Link companies to Zendesk organizations
+- [ ] View company tickets
+- [ ] View company orders
+- [ ] Configure company-specific permissions
+- [ ] Activate/deactivate portal access
+
+4. User Management
+
+- [ ] View all portal users
+- [ ] Add/invite users
+- [ ] Edit user details
+- [ ] Associate users with customer organizations
+- [ ] Activate/deactivate accounts
+- [ ] Assign user permissions
+- [ ] View linked Zendesk requester information
+- [ ] Review customer requests for new users
+
+5. Roles & Permissions
+
+- [ ] Manage regular customer permissions
+- [ ] Manage authorized customer permissions
+- [ ] Allow or restrict equipment ordering
+- [ ] Allow or restrict user-management requests
+- [ ] Configure order approval permissions
+- [ ] Configure internal admin access
+- [ ] Enforce server-side authorization
+- [ ] Prevent access to unrelated customer organizations
+
+6. Ticket Form Configuration
+
+- [ ] Manage ticket issue categories
+- [ ] Manage issue subcategories
+- [ ] Configure supported ticket forms
+- [ ] Map form fields to Zendesk fields
+- [ ] Configure required fields
+- [ ] Configure permission-restricted request types
+- [ ] Test ticket submission workflows
+
+7. Product Management
+
+- [ ] View equipment catalog
+- [ ] Add/edit/remove products
+- [ ] Upload product images
+- [ ] Manage product categories
+- [ ] Configure product descriptions and specifications
+- [ ] Set equipment prices
+- [ ] Enable/disable product availability
+- [ ] Configure product visibility and ordering restrictions
+
+8. Order Management
+
+- [ ] View submitted equipment orders
+- [ ] View ordering customer and company
+- [ ] View products, quantities, and totals
+- [ ] Review authorization or approval details
+- [ ] Track order processing status
+- [ ] Generate and view order PDFs
+- [ ] Create or retrieve linked Zendesk order tickets
+- [ ] Update order processing information
+- [ ] View customer order history
+
+9. Zendesk Integration Settings
+
+- [ ] Configure Zendesk account connection
+- [ ] Store credentials securely
+- [ ] Verify API access
+- [ ] Map portal users to Zendesk users
+- [ ] Map portal companies to Zendesk organizations
+- [ ] Synchronize ticket information
+- [ ] Handle API errors and rate limits
+- [ ] Monitor integration status
+
+10. Portal Settings
+
+- [ ] Manage portal branding
+- [ ] Configure authentication providers
+- [ ] Configure email notifications
+- [ ] Manage admin permissions
+- [ ] View security and activity audit logs
+- [ ] Configure customer-facing visibility settings
+
+---
+
+Future Phase — Not Part of Initial MVP
+
+- [ ] Online payment processing
+- [ ] Company-specific payment rules
+- [ ] Automated invoice workflows
+- [ ] Microsoft account provisioning and access automation
+- [ ] Advanced approval automation
+- [ ] WhatsApp integration
+- [ ] Knowledge base management
+
+---
+
+Admin Portal MVP Acceptance Criteria
+
+- [ ] Admin can securely log in
+- [ ] Admin can view and manage permitted Zendesk tickets
+- [ ] Customer organizations and user permissions work correctly
+- [ ] Admin can create and update equipment products
+- [ ] Admin can view customer equipment orders
+- [ ] Equipment orders are linked to Zendesk tickets
+- [ ] Order PDFs can be viewed
+- [ ] Changes and access respect company boundaries
+- [ ] Admin Portal is accessible on Vercel staging
+
+Implementation principle: Zendesk remains the source of truth for support tickets. Neon stores portal-specific data such as accounts, permissions, products, and orders. The Admin Portal brings those functions into one management interface.

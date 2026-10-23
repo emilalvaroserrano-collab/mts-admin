@@ -1,0 +1,252 @@
+import * as Dialog from "@radix-ui/react-dialog";
+import * as Switch from "@radix-ui/react-switch";
+import { cva, type VariantProps } from "class-variance-authority";
+import { X } from "lucide-react";
+import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes, type InputHTMLAttributes } from "react";
+import { cn } from "@/lib/cn";
+
+const buttonStyles = cva(
+  "inline-flex items-center justify-center gap-1.5 rounded-lg text-[13px] font-semibold shadow-[inset_0_-1px_0_rgba(0,0,0,0.12)] transition-colors disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        primary: "bg-ink text-white hover:bg-[#1a1a1a]",
+        secondary: "border border-line-strong bg-surface text-ink shadow-none hover:bg-surface-2",
+        ghost: "text-ink shadow-none hover:bg-surface-2",
+        danger: "border border-bad/20 bg-bad-soft text-bad shadow-none hover:opacity-90",
+      },
+      size: {
+        md: "h-8 px-3",
+        sm: "h-7 px-2.5",
+      },
+    },
+    defaultVariants: { variant: "primary", size: "md" },
+  },
+);
+
+export function Button({
+  className,
+  variant,
+  size,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & VariantProps<typeof buttonStyles>) {
+  return <button className={cn(buttonStyles({ variant, size }), className)} {...props} />;
+}
+
+const fieldClass =
+  "h-9 w-full rounded-lg border border-line-strong bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-subtle";
+
+export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+  return <input {...props} className={cn(fieldClass, props.className)} />;
+}
+
+export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      {...props}
+      className={cn(fieldClass, "h-auto min-h-28 py-3", props.className)}
+    />
+  );
+}
+
+export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select {...props} className={cn(fieldClass, "pr-8", props.className)} />;
+}
+
+export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="font-medium text-ink">{label}</span>
+      {children}
+      {hint ? <span className="text-xs text-muted">{hint}</span> : null}
+    </label>
+  );
+}
+
+const tones = {
+  neutral: "bg-surface-2 text-muted",
+  good: "bg-good-soft text-good",
+  warn: "bg-warn-soft text-warn",
+  bad: "bg-bad-soft text-bad",
+  info: "bg-info-soft text-info",
+  pine: "bg-accent-soft text-accent",
+};
+
+export function Badge({
+  tone = "neutral",
+  children,
+}: {
+  tone?: keyof typeof tones;
+  children: ReactNode;
+}) {
+  return (
+    <span className={cn("inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium", tones[tone])}>
+      {children}
+    </span>
+  );
+}
+
+const statusTone: Record<string, keyof typeof tones> = {
+  new: "info",
+  incoming: "info",
+  open: "pine",
+  pending: "warn",
+  solved: "good",
+  closed: "neutral",
+  approved: "info",
+  processing: "warn",
+  fulfilled: "good",
+  cancelled: "bad",
+  denied: "bad",
+  urgent: "bad",
+  high: "warn",
+  normal: "neutral",
+  low: "neutral",
+  active: "good",
+  inactive: "neutral",
+};
+
+export function StatusBadge({ value }: { value: string }) {
+  const key = value.toLowerCase();
+  return <Badge tone={statusTone[key] ?? "neutral"}>{value}</Badge>;
+}
+
+export function Modal({
+  open,
+  onOpenChange,
+  title,
+  description,
+  children,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  description?: string;
+  children: ReactNode;
+}) {
+  return (
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-ink/40" />
+        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 max-h-[calc(100vh-2rem)] w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-line bg-surface p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)] outline-none">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <Dialog.Title className="text-base font-semibold text-ink">{title}</Dialog.Title>
+              {description ? (
+                <Dialog.Description className="mt-1 text-sm text-muted">{description}</Dialog.Description>
+              ) : (
+                <Dialog.Description className="sr-only">{title}</Dialog.Description>
+              )}
+            </div>
+            <Dialog.Close className="grid size-7 place-items-center rounded-lg text-muted hover:bg-surface-2" aria-label="Close">
+              <X className="size-4" />
+            </Dialog.Close>
+          </div>
+          <div className="mt-5">{children}</div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+export function Toggle({
+  checked,
+  onCheckedChange,
+  label,
+}: {
+  checked: boolean;
+  onCheckedChange: (value: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-4 rounded-lg border border-line bg-surface px-3 py-3">
+      <span className="text-sm text-ink">{label}</span>
+      <Switch.Root
+        checked={checked}
+        onCheckedChange={onCheckedChange}
+        aria-label={label}
+        className="relative h-6 w-11 shrink-0 rounded-full bg-line-strong data-[state=checked]:bg-accent"
+      >
+        <Switch.Thumb className="block size-5 translate-x-0.5 rounded-full bg-surface transition-transform duration-150 data-[state=checked]:translate-x-5" />
+      </Switch.Root>
+    </label>
+  );
+}
+
+export function PageHeader({
+  eyebrow,
+  title,
+  description,
+  actions,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        {eyebrow ? <p className="text-xs font-medium text-muted">{eyebrow}</p> : null}
+        <h1 className="text-xl font-semibold tracking-tight text-ink">{title}</h1>
+        {description ? <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p> : null}
+      </div>
+      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+    </div>
+  );
+}
+
+export function Panel({ children, className }: { children: ReactNode; className?: string }) {
+  return <section className={cn("rounded-xl border border-line bg-surface p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]", className)}>{children}</section>;
+}
+
+export function Loading({ label = "Loading the desk" }: { label?: string }) {
+  return (
+    <div className="grid gap-3" aria-busy="true" aria-label={label}>
+      <div className="h-8 w-48 animate-pulse rounded-md bg-surface-2" />
+      <div className="h-24 animate-pulse rounded-2xl bg-surface-2" />
+      <div className="h-40 animate-pulse rounded-2xl bg-surface-2" />
+    </div>
+  );
+}
+
+export function ErrorNote({ message }: { message: string }) {
+  return (
+    <div className="rounded-2xl border border-bad/30 bg-bad-soft px-4 py-3 text-sm text-bad" role="alert">
+      {message}
+    </div>
+  );
+}
+
+export function Empty({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-line-strong px-4 py-10 text-center">
+      <p className="font-medium text-ink">{title}</p>
+      <p className="mt-1 text-sm text-muted">{body}</p>
+    </div>
+  );
+}
+
+export function Boot() {
+  return (
+    <div className="grid min-h-screen place-items-center bg-bg px-6">
+      <div className="text-center">
+        <p className="text-sm font-semibold text-ink">Manage Tech Service</p>
+        <p className="mt-1 text-[13px] text-muted">Opening admin</p>
+      </div>
+    </div>
+  );
+}
+
+export function errorText(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  return "Something went wrong.";
+}

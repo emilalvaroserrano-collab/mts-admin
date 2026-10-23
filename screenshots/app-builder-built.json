@@ -1,0 +1,43 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "ManageTech Admin",
+      "hasCanvas": false,
+      "bodyTextLen": 439,
+      "bodyTextHash": "383db274eac4982363e8788fa19ce33e49de51550c63a95704f8ab9d686eba9e",
+      "bodyTextPrefix": "ManageTech The desk for companies we already support. Zendesk st",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "ManageTech Admin",
+      "hasCanvas": false,
+      "bodyTextLen": 175,
+      "bodyTextHash": "c6e972e4a3a1465710efc548d7a6dbc7db5cd9fd5b44601d8161126e70991338",
+      "bodyTextPrefix": "ManageTech Sign in Admin access for the service desk. Continue w",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [
+    "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per /workspace/.grok/skills/og/SKILL.md."
+  ],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": true,
+  "baselineReasons": [
+    "desktop: body text changed (27 -> 439 chars, hash mismatch)",
+    "mobile: body text changed (27 -> 175 chars, hash mismatch)"
+  ]
+}
