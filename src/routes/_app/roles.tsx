@@ -63,7 +63,7 @@ function RolesPage() {
               </div>
             </div>
             <div className="mt-4 grid gap-2">
-              <Toggle checked={policy.canOrder} onCheckedChange={(canOrder) => patch(policy.id, { canOrder })} label="Can order equipment" />
+              <Toggle checked={policy.canOrder} onCheckedChange={(canOrder) => patch(policy.id, { canOrder })} label="Can order products" />
               <Toggle
                 checked={policy.canRequestUsers}
                 onCheckedChange={(canRequestUsers) => patch(policy.id, { canRequestUsers })}

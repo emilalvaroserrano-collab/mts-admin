@@ -1,6 +1,16 @@
 import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
+import { storeSlug } from "./format";
+import {
+  ALTERNATIVE_PORTAL,
+  alternativeMode,
+  createAlternativeCheckout,
+  envAlternative,
+  loadAlternativeCreds,
+  probeAlternative,
+  refreshAlternativePayment,
+} from "./alternative";
 import type {
   Actor,
   Audit,
@@ -14,12 +24,14 @@ import type {
   Org,
   OrgDetail,
   PeopleData,
+  Payments,
   Policy,
   PortalSettings,
   Product,
   Role,
   ShellInfo,
   Staff,
+  Storefront,
   Ticket,
   TicketDetail,
   TicketFilter,
@@ -182,6 +194,9 @@ function mapOrder(row: Row, items: OrderItem[] = []): Order {
     createdAt: s(row, "created_at"),
     updatedAt: s(row, "updated_at"),
     totalCents: n(row, "total_cents"),
+    paymentMethod: s(row, "payment_method"),
+    paymentUrl: s(row, "payment_url"),
+    paymentStatus: s(row, "payment_status"),
     items,
   };
 }
@@ -1561,11 +1576,15 @@ export const createOrder = createServerFn({ method: "POST" })
         return { productId: intish(row.productId) ?? 0, quantity: intish(row.quantity) ?? 0 };
       })
       .filter((item) => item.productId > 0 && item.quantity > 0);
-    if (!items.length) throw new Error("Add at least one piece of equipment.");
+    if (!items.length) throw new Error("Add at least one product.");
+    const paymentMethod = str(raw.paymentMethod, 32);
+    const returnUrl = str(raw.returnUrl, 300);
     return {
       organizationId,
       customerUserId: intish(raw.customerUserId),
       notes: str(raw.notes, 2000),
+      paymentMethod,
+      returnUrl,
       items,
     };
   })
@@ -1577,7 +1596,7 @@ export const createOrder = createServerFn({ method: "POST" })
     const orgs = await sql<Row>`select * from organizations where id = ${data.organizationId}`;
     const org = orgs[0];
     if (!org) throw new Error("Company not found.");
-    if (!b(org, "ordering_enabled")) throw new Error("Equipment ordering is turned off for this company.");
+    if (!b(org, "ordering_enabled")) throw new Error("Catalog ordering is turned off for this company.");
     if (!b(org, "portal_access")) throw new Error("Portal access is off for this company.");
     if (data.customerUserId) {
       const people = await sql<Row>`select * from customer_users where id = ${data.customerUserId}`;
@@ -1586,7 +1605,7 @@ export const createOrder = createServerFn({ method: "POST" })
         throw new Error("That person is not in this company.");
       }
       if (!b(person, "can_order") && s(person, "permission_level") !== "authorized") {
-        throw new Error("This person is not allowed to order equipment.");
+        throw new Error("This person is not allowed to order products.");
       }
     }
     const productRows = await sql.query<Row>(
@@ -1599,14 +1618,23 @@ export const createOrder = createServerFn({ method: "POST" })
     const unavailable = productRows.find((row) => !b(row, "available"));
     if (unavailable) throw new Error(`${s(unavailable, "name")} is not available.`);
     const status = b(org, "approval_required") ? "pending" : "approved";
+    const payments = await readPayments(sql);
+    const method = data.paymentMethod || payments.methods[0] || "";
+    if (!payments.methods.includes(method)) {
+      throw new Error("Choose a payment method that is turned on.");
+    }
+    if (method === "purchase_order" && payments.requirePo && !/\bpo\b|purchase order/i.test(data.notes)) {
+      throw new Error("Add the purchase order number in the notes.");
+    }
     const inserted = await sql<Row>`
-      insert into orders (organization_id, customer_user_id, status, notes, approval_note)
+      insert into orders (organization_id, customer_user_id, status, notes, approval_note, payment_method)
       values (
         ${data.organizationId},
         ${data.customerUserId},
         ${status},
         ${data.notes},
-        ${status === "approved" ? "Approval is not required for this company." : ""}
+        ${status === "approved" ? "Approval is not required for this company." : ""},
+        ${method}
       )
       returning id
     `;
@@ -1631,7 +1659,56 @@ export const createOrder = createServerFn({ method: "POST" })
       `MT-${1000 + id}`,
       notify ? "Desk notification preference is on." : s(org, "name"),
     );
-    return { id };
+    let paymentUrl = "";
+    if (method === "alternative") {
+      const creds = await loadAlternativeCreds(sql);
+      const buyer = data.customerUserId
+        ? (await sql<Row>`select email from customer_users where id = ${data.customerUserId}`)[0]
+        : undefined;
+      const lines = data.items.map((item) => {
+        const product = productRows.find((row) => n(row, "id") === item.productId);
+        return {
+          description: product ? s(product, "name") : "Product",
+          amount: product ? n(product, "price_cents") / 100 : 0,
+          quantity: item.quantity,
+        };
+      });
+      const due = new Date();
+      due.setDate(due.getDate() + 30);
+      if (creds) {
+        try {
+          const checkout = await createAlternativeCheckout(creds, {
+            reference: `MT-${1000 + id}`,
+            returnUrl: data.returnUrl,
+            externalId: `mts-org-${data.organizationId}`,
+            name: s(org, "name"),
+            email: buyer ? s(buyer, "email") : "",
+            existingCustomerId: s(org, "alternative_customer_id"),
+            dueDate: due.toISOString().slice(0, 10),
+            lines,
+          });
+          paymentUrl = checkout.url;
+          if (checkout.customerId) {
+            await sql`update organizations set alternative_customer_id = ${checkout.customerId} where id = ${data.organizationId}`;
+          }
+          await sql`
+            update orders set
+              payment_url = ${paymentUrl},
+              alternative_invoice_id = ${checkout.invoiceId},
+              alternative_request_id = ${checkout.requestId},
+              payment_status = ${checkout.paymentStatus}
+            where id = ${id}
+          `;
+        } catch {
+          paymentUrl = ALTERNATIVE_PORTAL;
+          await sql`update orders set payment_url = ${paymentUrl}, payment_status = 'portal' where id = ${id}`;
+        }
+      } else {
+        paymentUrl = ALTERNATIVE_PORTAL;
+        await sql`update orders set payment_url = ${paymentUrl}, payment_status = 'portal' where id = ${id}`;
+      }
+    }
+    return { id, paymentUrl };
   });
 
 export const updateOrder = createServerFn({ method: "POST" })
@@ -1679,7 +1756,7 @@ export const linkOrderTicket = createServerFn({ method: "POST" })
     assertWrite(actor);
     const order = await orderById(sql, data, actor);
     if (order.ticketId) return { ticketId: order.ticketId, warning: "" };
-    const subject = `Equipment order ${order.number}`;
+    const subject = `Catalog order ${order.number}`;
     const body = [
       `${order.organizationName}`,
       order.customerName ? `Requester: ${order.customerName}` : "",
@@ -2142,3 +2219,358 @@ export const saveStaff = createServerFn({ method: "POST" })
     await audit(sql, actor, "Updated staff", s(current, "email"), `${data.role}${data.organizationId ? ` · company ${data.organizationId}` : " · all companies"}`);
     return { ok: true };
   });
+
+function envStripe() {
+  const secret = (process.env.STRIPE_SECRET_KEY || process.env.STRIPE_API_KEY || "").trim();
+  const publishable = (process.env.STRIPE_PUBLISHABLE_KEY || "").trim();
+  return { secret, publishable, fromEnv: Boolean(secret) };
+}
+
+async function syncAlternativeEnv(sql: Sql, row: Row) {
+  const env = envAlternative();
+  const storedMode = alternativeMode(s(row, "alternative_environment") || "sandbox");
+  if (!env.fromEnv) {
+    return {
+      status: s(row, "alternative_status") || "portal",
+      error: s(row, "alternative_error"),
+      mode: storedMode,
+    };
+  }
+  const same =
+    s(row, "alternative_status") === "connected" &&
+    storedMode === env.mode &&
+    s(row, "alternative_client_id") === env.clientId;
+  if (same) return { status: "connected", error: "", mode: env.mode };
+  try {
+    await probeAlternative(env);
+    await sql`
+      update payment_settings set
+        alternative_status = 'connected',
+        alternative_error = '',
+        alternative_enabled = true,
+        alternative_environment = ${env.mode},
+        alternative_client_id = ${env.clientId}
+      where id = 1
+    `;
+    return { status: "connected", error: "", mode: env.mode };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Alternative Payments connection failed.";
+    await sql`
+      update payment_settings set
+        alternative_status = 'error',
+        alternative_error = ${message},
+        alternative_environment = ${env.mode},
+        alternative_client_id = ${env.clientId}
+      where id = 1
+    `;
+    return { status: "error", error: message, mode: env.mode };
+  }
+}
+
+async function readPayments(sql: Sql): Promise<Payments> {
+  const env = envStripe();
+  const rows = await sql<Row>`select * from payment_settings where id = 1`;
+  const row = rows[0] ?? {};
+  const cardEnabled = b(row, "card_enabled");
+  const invoiceEnabled = rows[0] ? b(row, "invoice_enabled") : true;
+  const purchaseOrderEnabled = rows[0] ? b(row, "purchase_order_enabled") : true;
+  const alternative = envAlternative();
+  const synced = await syncAlternativeEnv(sql, row);
+  const alternativeEnabled = synced.status === "connected" ? true : rows[0] ? b(row, "alternative_enabled") : true;
+  const methods = [
+    alternativeEnabled ? "alternative" : "",
+    cardEnabled ? "card" : "",
+    invoiceEnabled ? "invoice" : "",
+    purchaseOrderEnabled ? "purchase_order" : "",
+  ].filter(Boolean);
+  let lastStatus = s(row, "last_status") || "not_connected";
+  if (env.fromEnv && (lastStatus === "not_connected" || lastStatus === "saved")) lastStatus = "ready";
+  let alternativeStatus = synced.status;
+  if (alternative.fromEnv && alternativeStatus === "saved") alternativeStatus = "ready";
+  return {
+    cardEnabled,
+    invoiceEnabled,
+    purchaseOrderEnabled,
+    publishableKey: env.publishable || s(row, "stripe_publishable_key"),
+    secretSet: Boolean(env.secret || s(row, "stripe_secret_key")),
+    fromEnv: env.fromEnv,
+    invoiceTerms: s(row, "invoice_terms") || "Net 30",
+    requirePo: b(row, "require_po"),
+    lastStatus,
+    lastError: s(row, "last_error"),
+    accountName: s(row, "account_name"),
+    methods,
+    alternativeEnabled,
+    alternativeClientId: alternative.clientId || s(row, "alternative_client_id"),
+    alternativeSecretSet: Boolean(alternative.clientSecret || s(row, "alternative_client_secret")),
+    alternativeFromEnv: alternative.fromEnv,
+    alternativeStatus,
+    alternativeError: synced.error,
+    alternativePortalUrl: ALTERNATIVE_PORTAL,
+    alternativeEnvironment: synced.mode,
+    alternativeEnvironmentLocked: alternative.fromEnv,
+  };
+}
+
+async function stripeSecret(sql: Sql) {
+  const env = envStripe();
+  if (env.secret) return env.secret;
+  const rows = await sql<Row>`select stripe_secret_key from payment_settings where id = 1`;
+  return rows[0] ? s(rows[0], "stripe_secret_key") : "";
+}
+
+async function stripeAccount(secret: string) {
+  const response = await fetch("https://api.stripe.com/v1/account", {
+    headers: { Authorization: `Bearer ${secret}` },
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    let detail = "Stripe rejected the key.";
+    try {
+      const parsed = JSON.parse(text) as { error?: { message?: string } };
+      if (parsed.error?.message) detail = parsed.error.message.slice(0, 180);
+    } catch {
+      detail = text.slice(0, 180);
+    }
+    throw new Error(detail);
+  }
+  const account = JSON.parse(text) as {
+    id?: string;
+    business_profile?: { name?: string | null };
+    settings?: { dashboard?: { display_name?: string | null } };
+  };
+  return account.settings?.dashboard?.display_name || account.business_profile?.name || account.id || "Stripe account";
+}
+
+export const getPayments = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<Payments> => {
+    const sql = await getSql();
+    await loadActor(sql, context.userId);
+    return readPayments(sql);
+  });
+
+export const savePayments = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const terms = str(raw.invoiceTerms, 40);
+    const allowed = ["Net 15", "Net 30", "Net 45"];
+    return {
+      cardEnabled: flag(raw.cardEnabled, false),
+      invoiceEnabled: flag(raw.invoiceEnabled, true),
+      purchaseOrderEnabled: flag(raw.purchaseOrderEnabled, true),
+      publishableKey: str(raw.publishableKey, 120),
+      secretKey: str(raw.secretKey, 200),
+      clearSecret: flag(raw.clearSecret, false),
+      invoiceTerms: allowed.includes(terms) ? terms : "Net 30",
+      requirePo: flag(raw.requirePo, false),
+      alternativeEnabled: flag(raw.alternativeEnabled, true),
+      alternativeClientId: str(raw.alternativeClientId, 120),
+      alternativeClientSecret: str(raw.alternativeClientSecret, 200),
+      clearAlternativeSecret: flag(raw.clearAlternativeSecret, false),
+      alternativeEnvironment: alternativeMode(str(raw.alternativeEnvironment, 16)),
+    };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const env = envStripe();
+    const alternative = envAlternative();
+    const current = await sql<Row>`
+      select stripe_secret_key, stripe_publishable_key, alternative_client_id, alternative_client_secret
+      from payment_settings where id = 1
+    `;
+    const storedSecret = current[0] ? s(current[0], "stripe_secret_key") : "";
+    const storedAlternativeSecret = current[0] ? s(current[0], "alternative_client_secret") : "";
+    if (env.fromEnv && (data.secretKey || data.clearSecret)) {
+      throw new Error("The Stripe secret is set with STRIPE_SECRET_KEY. Remove it from the server environment to edit it here.");
+    }
+    if (alternative.fromEnv && (data.alternativeClientSecret || data.clearAlternativeSecret)) {
+      throw new Error("Alternative Payments is set with ALTERNATIVE_CLIENT_ID and ALTERNATIVE_CLIENT_SECRET.");
+    }
+    const secret = data.clearSecret ? "" : data.secretKey || storedSecret;
+    const alternativeSecret = data.clearAlternativeSecret ? "" : data.alternativeClientSecret || storedAlternativeSecret;
+    if (data.cardEnabled && !env.secret && !secret) throw new Error("Add a Stripe secret key before turning on card payments.");
+    if (data.publishableKey && !data.publishableKey.startsWith("pk_")) throw new Error("The publishable key should start with pk_.");
+    if (data.secretKey && !data.secretKey.startsWith("sk_") && !data.secretKey.startsWith("rk_")) {
+      throw new Error("The secret key should start with sk_.");
+    }
+    const publishable = env.publishable || data.publishableKey;
+    const clientId = alternative.clientId || data.alternativeClientId;
+    await sql`
+      insert into payment_settings (
+        id, card_enabled, invoice_enabled, purchase_order_enabled,
+        stripe_publishable_key, stripe_secret_key, invoice_terms, require_po, last_status, last_error,
+        alternative_enabled, alternative_client_id, alternative_client_secret, alternative_environment
+      ) values (
+        1, ${data.cardEnabled}, ${data.invoiceEnabled}, ${data.purchaseOrderEnabled},
+        ${publishable}, ${secret}, ${data.invoiceTerms}, ${data.requirePo}, 'saved', '',
+        ${data.alternativeEnabled}, ${clientId}, ${alternativeSecret}, ${alternative.fromEnv ? alternative.mode : data.alternativeEnvironment}
+      )
+      on conflict (id) do update set
+        card_enabled = excluded.card_enabled,
+        invoice_enabled = excluded.invoice_enabled,
+        purchase_order_enabled = excluded.purchase_order_enabled,
+        stripe_publishable_key = excluded.stripe_publishable_key,
+        stripe_secret_key = excluded.stripe_secret_key,
+        invoice_terms = excluded.invoice_terms,
+        require_po = excluded.require_po,
+        last_status = 'saved',
+        last_error = '',
+        alternative_enabled = excluded.alternative_enabled,
+        alternative_client_id = excluded.alternative_client_id,
+        alternative_client_secret = excluded.alternative_client_secret,
+        alternative_environment = excluded.alternative_environment
+    `;
+    await audit(sql, actor, "Saved payments", data.invoiceTerms, data.alternativeEnabled ? "Alternative Payments on" : "Alternative Payments off");
+    return { ok: true };
+  });
+
+export const testPayments = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertWrite(actor);
+    const secret = await stripeSecret(sql);
+    if (!secret) throw new Error("Add a Stripe secret key first. Use STRIPE_SECRET_KEY or the form.");
+    try {
+      const name = await stripeAccount(secret);
+      await sql`
+        update payment_settings
+        set last_status = 'connected', last_error = '', account_name = ${name}, card_enabled = true
+        where id = 1
+      `;
+      await audit(sql, actor, "Tested Stripe", name, "");
+      return { ok: true, name };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Stripe connection failed.";
+      await sql`update payment_settings set last_status = 'error', last_error = ${message} where id = 1`;
+      throw new Error(message);
+    }
+  });
+
+export const testAlternative = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertWrite(actor);
+    const creds = await loadAlternativeCreds(sql);
+    if (!creds) {
+      throw new Error("Add an Alternative Payments client id and secret, or set ALTERNATIVE_CLIENT_ID and ALTERNATIVE_CLIENT_SECRET.");
+    }
+    try {
+      const probed = await probeAlternative(creds);
+      await sql`
+        update payment_settings
+        set alternative_status = 'connected', alternative_error = '', alternative_enabled = true,
+            alternative_environment = ${creds.mode}, alternative_client_id = ${creds.clientId}
+        where id = 1
+      `;
+      await audit(sql, actor, "Tested Alternative Payments", creds.mode, probed.base);
+      return { ok: true, mode: creds.mode };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Alternative Payments connection failed.";
+      await sql`update payment_settings set alternative_status = 'error', alternative_error = ${message} where id = 1`;
+      throw new Error(message);
+    }
+  });
+
+export const refreshAlternativeOrder = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((id: number) => {
+    const value = intish(id);
+    if (!value) throw new Error("Missing order.");
+    return value;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    await orderById(sql, data, actor);
+    const creds = await loadAlternativeCreds(sql);
+    if (!creds) throw new Error("Alternative Payments is not connected.");
+    const row = (await sql<Row>`select alternative_invoice_id, alternative_request_id, payment_url, payment_status from orders where id = ${data}`)[0];
+    const refreshed = await refreshAlternativePayment(creds, {
+      invoiceId: row ? s(row, "alternative_invoice_id") : "",
+      requestId: row ? s(row, "alternative_request_id") : "",
+    });
+    await sql`
+      update orders set
+        payment_status = ${refreshed.status || (row ? s(row, "payment_status") : "")},
+        payment_url = ${refreshed.url || (row ? s(row, "payment_url") : "")}
+      where id = ${data}
+    `;
+    return orderById(sql, data, actor);
+  });
+
+export const getStorefront = createServerFn({ method: "GET" }).handler(async (): Promise<Storefront> => {
+  const sql = await getSql();
+  const settings = await sql<Row>`select * from portal_settings where id = 1`;
+  const setting = settings[0];
+  const brandName = setting ? s(setting, "brand_name") || "Manage Tech Service" : "Manage Tech Service";
+  const closed = setting ? !b(setting, "customer_catalog_visible") : false;
+  const rows = closed ? [] : await sql<Row>`select * from products where available = true order by category, name`;
+  return {
+    brandName,
+    slug: storeSlug(brandName),
+    tagline: setting ? s(setting, "tagline") : "",
+    supportEmail: setting ? s(setting, "support_email") : "",
+    closed,
+    products: rows.map(mapProduct),
+  };
+});
+
+export const placeStorefrontOrder = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const name = str(raw.name, 120);
+    const email = str(raw.email, 160).toLowerCase();
+    if (!name) throw new Error("Enter your name.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid email.");
+    const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
+    const items = itemsRaw
+      .map((item) => {
+        const row = obj(item);
+        return { sku: str(row.sku, 40), quantity: intish(row.quantity) ?? 0 };
+      })
+      .filter((item) => item.sku && item.quantity > 0 && item.quantity <= 99);
+    if (!items.length) throw new Error("Your cart is empty.");
+    return { name, email, company: str(raw.company, 120), notes: str(raw.notes, 1000), items };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const orgs = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
+    const org = orgs[0];
+    if (!org) throw new Error("The online shop is not ready to take orders.");
+    const skus = data.items.map((item) => item.sku);
+    const products = await sql.query<Row>(
+      `select * from products where available = true and sku in (${skus.map((_, index) => `$${index + 1}`).join(",")})`,
+      skus,
+    );
+    if (products.length !== new Set(skus).size) throw new Error("A product in your cart is no longer available.");
+    const note = [`Web order`, data.name, data.email, data.company, data.notes].filter(Boolean).join(" · ");
+    const inserted = await sql<Row>`
+      insert into orders (organization_id, customer_user_id, status, notes, approval_note, payment_method)
+      values (${n(org, "id")}, null, 'pending', ${note}, 'Placed from the online shop.', 'invoice')
+      returning id
+    `;
+    const id = n(inserted[0], "id");
+    for (const item of data.items) {
+      const product = products.find((row) => s(row, "sku") === item.sku);
+      if (!product) continue;
+      await sql`
+        insert into order_items (order_id, product_id, product_name, sku, quantity, unit_price_cents)
+        values (${id}, ${n(product, "id")}, ${s(product, "name")}, ${s(product, "sku")}, ${item.quantity}, ${n(product, "price_cents")})
+      `;
+    }
+    await sql`
+      insert into audit_logs (actor_user_id, actor_name, action, target, detail)
+      values ('', 'Online shop', 'Created order', ${`MT-${1000 + id}`}, ${data.email})
+    `;
+    return { id, number: `MT-${1000 + id}` };
+  });
+
+

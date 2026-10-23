@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { createOrder, getPeople, listOrders, listProducts } from "@/lib/portal/api";
-import { money } from "@/lib/portal/format";
+import { createOrder, getPayments, getPeople, listOrders, listProducts } from "@/lib/portal/api";
+import { money, paymentLabel } from "@/lib/portal/format";
 import { Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge, Textarea, errorText } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/orders/")({
@@ -14,12 +14,14 @@ function OrdersPage() {
   const query = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
   const people = useQuery({ queryKey: ["people"], queryFn: () => getPeople() });
   const products = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
+  const payments = useQuery({ queryKey: ["payments"], queryFn: () => getPayments() });
   const [open, setOpen] = useState(false);
   const [organizationId, setOrganizationId] = useState<number | "">("");
   const [customerUserId, setCustomerUserId] = useState<number | "">("");
   const [productId, setProductId] = useState<number | "">("");
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("");
   const [lines, setLines] = useState<{ productId: number; name: string; quantity: number }[]>([]);
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -30,6 +32,8 @@ function OrdersPage() {
           organizationId: Number(organizationId),
           customerUserId: customerUserId === "" ? null : Number(customerUserId),
           notes,
+          paymentMethod: paymentMethod || payments.data?.methods[0] || "",
+          returnUrl: `${window.location.origin}/orders`,
           items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity })),
         },
       }),
@@ -40,6 +44,9 @@ function OrdersPage() {
       setNotes("");
       client.invalidateQueries({ queryKey: ["orders"] });
       client.invalidateQueries({ queryKey: ["dashboard"] });
+      if (result.paymentUrl && (paymentMethod || payments.data?.methods[0]) === "alternative") {
+        window.open(result.paymentUrl, "_blank", "noopener,noreferrer");
+      }
       navigate({ to: "/orders/$orderId", params: { orderId: String(result.id) } });
     },
     onError: (error) => toast.error(errorText(error)),
@@ -66,6 +73,7 @@ function OrdersPage() {
                 <th className="px-4 py-3 font-medium">Order</th>
                 <th className="px-4 py-3 font-medium">Company</th>
                 <th className="px-4 py-3 font-medium">Total</th>
+                <th className="px-4 py-3 font-medium">Payment</th>
                 <th className="px-4 py-3 font-medium">Ticket</th>
                 <th className="px-4 py-3 font-medium">Status</th>
               </tr>
@@ -81,6 +89,7 @@ function OrdersPage() {
                   </td>
                   <td className="px-4 py-3">{order.organizationName}</td>
                   <td className="px-4 py-3 font-mono tabular-nums">{money(order.totalCents)}</td>
+                  <td className="px-4 py-3">{order.paymentMethod ? paymentLabel(order.paymentMethod) : "—"}</td>
                   <td className="px-4 py-3">{order.zendeskTicketId ? `#${order.zendeskTicketId}` : order.ticketId ? `P-${order.ticketId}` : "—"}</td>
                   <td className="px-4 py-3"><StatusBadge value={order.status} /></td>
                 </tr>
@@ -146,7 +155,19 @@ function OrdersPage() {
               </li>
             ))}
           </ul>
-          <Field label="Notes"><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
+          <Field label="Payment">
+            <Select value={paymentMethod || payments.data?.methods[0] || ""} onChange={(event) => setPaymentMethod(event.target.value)}>
+              {(payments.data?.methods ?? []).map((method) => (
+                <option key={method} value={method}>
+                  {paymentLabel(method)}
+                  {method === "invoice" && payments.data ? ` · ${payments.data.invoiceTerms}` : ""}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Notes">
+            <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+          </Field>
           <Button type="submit" disabled={save.isPending || lines.length === 0}>{save.isPending ? "Saving" : "Place order"}</Button>
         </form>
       </Modal>

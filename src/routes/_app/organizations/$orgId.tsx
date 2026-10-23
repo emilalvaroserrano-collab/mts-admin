@@ -85,7 +85,7 @@ function CompanyPage() {
         </Panel>
         <div className="grid gap-3 content-start">
           <Toggle checked={form.portalAccess} onCheckedChange={(portalAccess) => patch({ portalAccess })} label="Portal access" />
-          <Toggle checked={form.orderingEnabled} onCheckedChange={(orderingEnabled) => patch({ orderingEnabled })} label="Equipment ordering" />
+          <Toggle checked={form.orderingEnabled} onCheckedChange={(orderingEnabled) => patch({ orderingEnabled })} label="Catalog ordering" />
           <Toggle checked={form.userRequestsEnabled} onCheckedChange={(userRequestsEnabled) => patch({ userRequestsEnabled })} label="User requests" />
           <Toggle checked={form.approvalRequired} onCheckedChange={(approvalRequired) => patch({ approvalRequired })} label="Order approval required" />
         </div>

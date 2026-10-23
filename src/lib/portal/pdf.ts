@@ -22,7 +22,7 @@ function buildOrderPdf(order: Order): Uint8Array {
   push("(Manage Tech Service) Tj");
   push("/F1 9 Tf");
   push("1 0 0 1 48 750 Tm");
-  push("(Equipment order) Tj");
+  push("(Catalog order) Tj");
   push("ET");
 
   push("0.102 0.098 0.086 rg");

@@ -182,7 +182,7 @@ function PeoplePage() {
             <Field label="Zendesk user id" hint="Requester id from Zendesk, when you have one.">
               <Input value={draft.zendeskUserId} onChange={(event) => setDraft({ ...draft, zendeskUserId: event.target.value })} />
             </Field>
-            <Toggle checked={draft.canOrder} onCheckedChange={(canOrder) => setDraft({ ...draft, canOrder })} label="Can order equipment" />
+            <Toggle checked={draft.canOrder} onCheckedChange={(canOrder) => setDraft({ ...draft, canOrder })} label="Can order products" />
             <Toggle checked={draft.canRequestUsers} onCheckedChange={(canRequestUsers) => setDraft({ ...draft, canRequestUsers })} label="Can request users" />
             <Toggle checked={draft.canApproveOrders} onCheckedChange={(canApproveOrders) => setDraft({ ...draft, canApproveOrders })} label="Can approve orders" />
             <Toggle checked={draft.active} onCheckedChange={(active) => setDraft({ ...draft, active })} label="Account active" />

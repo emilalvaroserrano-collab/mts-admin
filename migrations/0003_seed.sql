@@ -87,15 +87,15 @@ insert into order_items (order_id, product_id, product_name, sku, quantity, unit
 insert into ticket_forms (name, category, subcategory, zendesk_field, required_fields, restricted, active) values
   ('Hardware issue', 'Hardware', 'Device will not start', 'custom_field_issue', 'subject,description,device', false, true),
   ('Access request', 'Access', 'Mailbox', 'custom_field_access', 'subject,user', false, true),
-  ('Equipment order', 'Ordering', 'Catalog request', 'custom_field_order', 'subject,items,approver', true, true),
+  ('Catalog order', 'Ordering', 'Catalog request', 'custom_field_order', 'subject,items,approver', true, true),
   ('Billing question', 'Billing', 'Invoice', 'custom_field_billing', 'subject,invoice', false, true),
   ('Project request', 'Projects', 'Site work', 'custom_field_project', 'subject,site,window', true, true);
 
 insert into role_policies
   (id, label, description, can_order, can_request_users, can_approve_orders, can_manage_portal, scope)
 values
-  ('regular', 'Regular customer', 'Can open standard tickets. Cannot order equipment or request new accounts.', false, false, false, false, 'own company'),
-  ('authorized', 'Authorized customer', 'Can order equipment and ask for new portal users. Approvals stay with a named approver.', true, true, false, false, 'own company'),
+  ('regular', 'Regular customer', 'Can open standard tickets. Cannot order products or request new accounts.', false, false, false, false, 'own company'),
+  ('authorized', 'Authorized customer', 'Can order products and ask for new portal users. Approvals stay with a named approver.', true, true, false, false, 'own company'),
   ('agent', 'Support agent', 'Works the queue, companies, catalog, and orders. Cannot change portal credentials or staff roles.', true, true, true, false, 'assigned companies'),
   ('admin', 'Internal admin', 'Full desk, including Zendesk credentials, branding, and staff access.', true, true, true, true, 'all companies');
 

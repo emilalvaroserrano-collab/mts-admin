@@ -14,6 +14,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppFormsRouteImport } from './routes/_app/forms'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
+import { Route as AppPaymentsRouteImport } from './routes/_app/payments'
 import { Route as AppProductsRouteImport } from './routes/_app/products'
 import { Route as AppRolesRouteImport } from './routes/_app/roles'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
@@ -25,6 +26,9 @@ import { Route as AppOrganizationsOrgIdRouteImport } from './routes/_app/organiz
 import { Route as AppTicketsIndexRouteImport } from './routes/_app/tickets/index'
 import { Route as AppTicketsTicketIdRouteImport } from './routes/_app/tickets/$ticketId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as StoreSlugIndexRouteImport } from './routes/store/$slug/index'
+import { Route as StoreSlugSkuRouteImport } from './routes/store/$slug/$sku'
+import { Route as StoreSlugCheckoutRouteImport } from './routes/store/$slug/checkout'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -48,6 +52,11 @@ const AppFormsRoute = AppFormsRouteImport.update({
 const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPaymentsRoute = AppPaymentsRouteImport.update({
+  id: '/payments',
+  path: '/payments',
   getParentRoute: () => AppRoute,
 } as any)
 const AppProductsRoute = AppProductsRouteImport.update({
@@ -105,12 +114,28 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoreSlugIndexRoute = StoreSlugIndexRouteImport.update({
+  id: '/store/$slug/',
+  path: '/store/$slug/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoreSlugSkuRoute = StoreSlugSkuRouteImport.update({
+  id: '/store/$slug/$sku',
+  path: '/store/$slug/$sku',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoreSlugCheckoutRoute = StoreSlugCheckoutRouteImport.update({
+  id: '/store/$slug/checkout',
+  path: '/store/$slug/checkout',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
+  '/payments': typeof AppPaymentsRoute
   '/products': typeof AppProductsRoute
   '/roles': typeof AppRolesRoute
   '/settings': typeof AppSettingsRoute
@@ -119,14 +144,18 @@ export interface FileRoutesByFullPath {
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/store/$slug/$sku': typeof StoreSlugSkuRoute
+  '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
   '/orders/': typeof AppOrdersIndexRoute
   '/organizations/': typeof AppOrganizationsIndexRoute
   '/tickets/': typeof AppTicketsIndexRoute
+  '/store/$slug/': typeof StoreSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
+  '/payments': typeof AppPaymentsRoute
   '/products': typeof AppProductsRoute
   '/roles': typeof AppRolesRoute
   '/settings': typeof AppSettingsRoute
@@ -136,9 +165,12 @@ export interface FileRoutesByTo {
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/store/$slug/$sku': typeof StoreSlugSkuRoute
+  '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
   '/orders': typeof AppOrdersIndexRoute
   '/organizations': typeof AppOrganizationsIndexRoute
   '/tickets': typeof AppTicketsIndexRoute
+  '/store/$slug': typeof StoreSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -146,6 +178,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/_app/forms': typeof AppFormsRoute
   '/_app/integrations': typeof AppIntegrationsRoute
+  '/_app/payments': typeof AppPaymentsRoute
   '/_app/products': typeof AppProductsRoute
   '/_app/roles': typeof AppRolesRoute
   '/_app/settings': typeof AppSettingsRoute
@@ -155,9 +188,12 @@ export interface FileRoutesById {
   '/_app/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/_app/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/store/$slug/$sku': typeof StoreSlugSkuRoute
+  '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
   '/_app/orders/': typeof AppOrdersIndexRoute
   '/_app/organizations/': typeof AppOrganizationsIndexRoute
   '/_app/tickets/': typeof AppTicketsIndexRoute
+  '/store/$slug/': typeof StoreSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -166,6 +202,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/forms'
     | '/integrations'
+    | '/payments'
     | '/products'
     | '/roles'
     | '/settings'
@@ -174,14 +211,18 @@ export interface FileRouteTypes {
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
     | '/api/auth/$'
+    | '/store/$slug/$sku'
+    | '/store/$slug/checkout'
     | '/orders/'
     | '/organizations/'
     | '/tickets/'
+    | '/store/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/login'
     | '/forms'
     | '/integrations'
+    | '/payments'
     | '/products'
     | '/roles'
     | '/settings'
@@ -191,15 +232,19 @@ export interface FileRouteTypes {
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
     | '/api/auth/$'
+    | '/store/$slug/$sku'
+    | '/store/$slug/checkout'
     | '/orders'
     | '/organizations'
     | '/tickets'
+    | '/store/$slug'
   id:
     | '__root__'
     | '/_app'
     | '/login'
     | '/_app/forms'
     | '/_app/integrations'
+    | '/_app/payments'
     | '/_app/products'
     | '/_app/roles'
     | '/_app/settings'
@@ -209,15 +254,21 @@ export interface FileRouteTypes {
     | '/_app/organizations/$orgId'
     | '/_app/tickets/$ticketId'
     | '/api/auth/$'
+    | '/store/$slug/$sku'
+    | '/store/$slug/checkout'
     | '/_app/orders/'
     | '/_app/organizations/'
     | '/_app/tickets/'
+    | '/store/$slug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  StoreSlugSkuRoute: typeof StoreSlugSkuRoute
+  StoreSlugCheckoutRoute: typeof StoreSlugCheckoutRoute
+  StoreSlugIndexRoute: typeof StoreSlugIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -255,6 +306,13 @@ declare module '@tanstack/react-router' {
       path: '/integrations'
       fullPath: '/integrations'
       preLoaderRoute: typeof AppIntegrationsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/payments': {
+      id: '/_app/payments'
+      path: '/payments'
+      fullPath: '/payments'
+      preLoaderRoute: typeof AppPaymentsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/products': {
@@ -334,12 +392,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/store/$slug/': {
+      id: '/store/$slug/'
+      path: '/store/$slug'
+      fullPath: '/store/$slug/'
+      preLoaderRoute: typeof StoreSlugIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/store/$slug/$sku': {
+      id: '/store/$slug/$sku'
+      path: '/store/$slug/$sku'
+      fullPath: '/store/$slug/$sku'
+      preLoaderRoute: typeof StoreSlugSkuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/store/$slug/checkout': {
+      id: '/store/$slug/checkout'
+      path: '/store/$slug/checkout'
+      fullPath: '/store/$slug/checkout'
+      preLoaderRoute: typeof StoreSlugCheckoutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AppRouteChildren {
   AppFormsRoute: typeof AppFormsRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
+  AppPaymentsRoute: typeof AppPaymentsRoute
   AppProductsRoute: typeof AppProductsRoute
   AppRolesRoute: typeof AppRolesRoute
   AppSettingsRoute: typeof AppSettingsRoute
@@ -356,6 +436,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppFormsRoute: AppFormsRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
+  AppPaymentsRoute: AppPaymentsRoute,
   AppProductsRoute: AppProductsRoute,
   AppRolesRoute: AppRolesRoute,
   AppSettingsRoute: AppSettingsRoute,
@@ -375,6 +456,9 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  StoreSlugSkuRoute: StoreSlugSkuRoute,
+  StoreSlugCheckoutRoute: StoreSlugCheckoutRoute,
+  StoreSlugIndexRoute: StoreSlugIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -186,6 +186,9 @@ async function createSql(): Promise<Sql> {
  * Schema comes from `migrations/*.sql`, auto-applied before the first query on
  * both backends — define tables there, never inline in server functions.
  * New files in migrations/ apply on the next server load.
+ * Copy changes live with the portal.
+ * Payment methods include Alternative Payments.
+ * Sandbox uses the demo Alternative Payments host.
  */
 export function getSql(): Promise<Sql> {
   sqlPromise ??= createSql().catch((err) => {

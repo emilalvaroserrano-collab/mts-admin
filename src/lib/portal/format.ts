@@ -24,3 +24,20 @@ export function stamp(iso: string) {
   if (Number.isNaN(d.getTime())) return "";
   return format(d, "MMM d, yyyy · h:mm a");
 }
+
+export function paymentLabel(method: string) {
+  if (method === "card") return "Card";
+  if (method === "invoice") return "Invoice";
+  if (method === "purchase_order") return "Purchase order";
+  if (method === "alternative") return "Alternative Payments";
+  return method || "—";
+}
+
+export function storeSlug(brand: string) {
+  const slug = brand
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || "store";
+}

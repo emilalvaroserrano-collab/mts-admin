@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getOrder, linkOrderTicket, updateOrder } from "@/lib/portal/api";
-import { day, money } from "@/lib/portal/format";
+import { getOrder, linkOrderTicket, refreshAlternativeOrder, updateOrder } from "@/lib/portal/api";
+import { day, money, paymentLabel } from "@/lib/portal/format";
 import { orderPdfUrl } from "@/lib/portal/pdf";
 import { Button, ErrorNote, Field, Loading, PageHeader, Panel, Select, StatusBadge, Textarea, errorText } from "@/components/ui";
 
@@ -51,6 +51,15 @@ function OrderPage() {
     onError: (error) => toast.error(errorText(error)),
   });
 
+  const refreshPay = useMutation({
+    mutationFn: () => refreshAlternativeOrder({ data: id }),
+    onSuccess: (next) => {
+      toast.success(next.paymentStatus ? `Payment ${next.paymentStatus}` : "Payment checked");
+      client.invalidateQueries({ queryKey: ["order", id] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+
   if (query.isPending) return <Loading />;
   if (query.isError) return <ErrorNote message={query.error.message} />;
   const order = query.data.order;
@@ -69,9 +78,24 @@ function OrderPage() {
       <PageHeader
         eyebrow={`Placed ${day(order.createdAt)}`}
         title={order.number}
-        description={`${order.organizationName}${order.customerName ? ` · ${order.customerName}` : ""}`}
+        description={`${order.organizationName}${order.customerName ? ` · ${order.customerName}` : ""}${order.paymentMethod ? ` · ${paymentLabel(order.paymentMethod)}` : ""}`}
         actions={
           <>
+            {order.paymentMethod === "alternative" ? (
+              <>
+                <a
+                  href={order.paymentUrl || "https://go.alternativepayments.io"}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 items-center rounded-lg bg-ink px-3 text-[13px] font-semibold text-white"
+                >
+                  Pay with Alternative Payments
+                </a>
+                <Button type="button" variant="secondary" disabled={refreshPay.isPending} onClick={() => refreshPay.mutate()}>
+                  {refreshPay.isPending ? "Checking" : "Check payment"}
+                </Button>
+              </>
+            ) : null}
             <Button variant="secondary" type="button" onClick={openPdf}>
               Order PDF
             </Button>
@@ -83,6 +107,7 @@ function OrderPage() {
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <StatusBadge value={order.status} />
+        {order.paymentStatus ? <StatusBadge value={order.paymentStatus} /> : null}
         {order.ticketId ? (
           <Link to="/tickets/$ticketId" params={{ ticketId: String(order.ticketId) }} className="text-sm text-accent">
             {order.zendeskTicketId ? `Zendesk #${order.zendeskTicketId}` : `Portal ticket P-${order.ticketId}`}

@@ -130,6 +130,9 @@ export type Order = {
   createdAt: string;
   updatedAt: string;
   totalCents: number;
+  paymentMethod: string;
+  paymentUrl: string;
+  paymentStatus: string;
   items: OrderItem[];
 };
 
@@ -246,6 +249,41 @@ export type OrderDraft = {
   organizationId: number;
   customerUserId: number | null;
   notes: string;
+  paymentMethod: string;
+  returnUrl: string;
   items: { productId: number; quantity: number }[];
+};
+
+export type Payments = {
+  cardEnabled: boolean;
+  invoiceEnabled: boolean;
+  purchaseOrderEnabled: boolean;
+  publishableKey: string;
+  secretSet: boolean;
+  fromEnv: boolean;
+  invoiceTerms: string;
+  requirePo: boolean;
+  lastStatus: string;
+  lastError: string;
+  accountName: string;
+  methods: string[];
+  alternativeEnabled: boolean;
+  alternativeClientId: string;
+  alternativeSecretSet: boolean;
+  alternativeFromEnv: boolean;
+  alternativeStatus: string;
+  alternativeError: string;
+  alternativePortalUrl: string;
+  alternativeEnvironment: "sandbox" | "live";
+  alternativeEnvironmentLocked: boolean;
+};
+
+export type Storefront = {
+  brandName: string;
+  slug: string;
+  tagline: string;
+  supportEmail: string;
+  closed: boolean;
+  products: Product[];
 };
 

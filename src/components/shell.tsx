@@ -4,6 +4,8 @@ import {
   Building2,
   Cable,
   ClipboardList,
+  CreditCard,
+  Eye,
   LayoutDashboard,
   ListTree,
   Menu,
@@ -14,10 +16,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, Fragment } from "react";
 import { UserButton } from "@/lib/auth/gates";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { getShell } from "@/lib/portal/api";
+import { storeSlug } from "@/lib/portal/format";
 import { ticketSearch } from "@/lib/portal/ticket-search";
 import { Boot, Input } from "./ui";
 
@@ -28,6 +31,7 @@ const NAV = [
   { to: "/users", label: "People", icon: Users },
   { to: "/products", label: "Catalog", icon: Monitor },
   { to: "/orders", label: "Orders", icon: ClipboardList },
+  { to: "/payments", label: "Payments", icon: CreditCard },
   { to: "/forms", label: "Ticket forms", icon: ListTree },
   { to: "/roles", label: "Roles", icon: Shield },
   { to: "/integrations", label: "Zendesk", icon: Cable },
@@ -73,20 +77,32 @@ export function Shell({ children }: { children: ReactNode }) {
           const active = "exact" in item && item.exact ? path === item.to : path === item.to || path.startsWith(`${item.to}/`);
           const Icon = item.icon;
           return (
-            <Link
-              key={item.to}
-              to={item.to}
-              search={item.to === "/tickets" ? ticketSearch() : undefined}
-              aria-current={active ? "page" : undefined}
-              className={
-                active
-                  ? "flex h-8 items-center gap-2 rounded-lg bg-[#f1f1f1] px-2 text-[13px] font-semibold text-ink"
-                  : "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-[#f7f7f7] hover:text-ink"
-              }
-            >
-              <Icon className="size-4 shrink-0" strokeWidth={1.75} />
-              {item.label}
-            </Link>
+            <Fragment key={item.to}>
+              <Link
+                to={item.to}
+                search={item.to === "/tickets" ? ticketSearch() : undefined}
+                aria-current={active ? "page" : undefined}
+                className={
+                  active
+                    ? "flex h-8 items-center gap-2 rounded-lg bg-[#f1f1f1] px-2 text-[13px] font-semibold text-ink"
+                    : "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-[#f7f7f7] hover:text-ink"
+                }
+              >
+                <Icon className="size-4 shrink-0" strokeWidth={1.75} />
+                {item.label}
+              </Link>
+              {item.to === "/products" ? (
+                <a
+                  href={`/store/${storeSlug(info?.brandName ?? "Manage Tech Service")}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-[#f7f7f7] hover:text-ink"
+                >
+                  <Eye className="size-4 shrink-0" strokeWidth={1.75} />
+                  Online Shop
+                </a>
+              ) : null}
+            </Fragment>
           );
         })}
       </nav>
