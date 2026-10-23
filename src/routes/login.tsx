@@ -1,6 +1,8 @@
+import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient, authEnabled, GROK_PROVIDERS, signIn } from "@/lib/auth/client";
+import { getSignInOptions } from "@/lib/auth/options";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Boot, Button, Field, Input } from "@/components/ui";
 
@@ -39,6 +41,8 @@ function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const options = useQuery({ queryKey: ["sign-in-options"], queryFn: () => getSignInOptions() });
+  const auth0 = Boolean(options.data?.auth0);
 
   if (isPending) return <Boot />;
   if (user) return <Navigate to="/" />;
@@ -90,7 +94,7 @@ function LoginPage() {
         <div>
           <h1 className="max-w-md text-4xl font-semibold leading-tight tracking-tight">The admin for companies, tickets, and the catalog.</h1>
           <ul className="mt-8 max-w-sm space-y-3 text-sm text-white/75">
-            <li>Google, Microsoft, or email.</li>
+            <li>{auth0 ? "Auth0, Google, Microsoft, or email." : "Google, Microsoft, or email."}</li>
             <li>Zendesk stays the system of record for support tickets.</li>
             <li>Orders stay inside the companies a person is allowed to see.</li>
           </ul>
@@ -107,9 +111,16 @@ function LoginPage() {
             </div>
           </div>
           <h2 className="text-xl font-semibold tracking-tight">{mode === "up" ? "Create account" : "Log in"}</h2>
-          <p className="mt-1 text-[13px] text-muted">Choose Google, Microsoft, or email.</p>
+          <p className="mt-1 text-[13px] text-muted">
+            {auth0 ? "Choose Auth0, Google, Microsoft, or email." : "Choose Google, Microsoft, or email."}
+          </p>
           {authEnabled ? (
             <div className="mt-5 grid gap-2">
+              {auth0 ? (
+                <Button type="button" variant="secondary" disabled={busy} onClick={() => startProvider("auth0")}>
+                  Continue with Auth0
+                </Button>
+              ) : null}
               {GROK_PROVIDERS.map((provider) => (
                 <Button
                   key={provider.providerId}

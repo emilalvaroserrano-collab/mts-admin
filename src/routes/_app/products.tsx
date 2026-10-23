@@ -3,7 +3,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Headphones, Keyboard, Laptop, Monitor, Plus, type LucideIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import * as XLSX from "xlsx";
 import { importProducts, listProducts, removeProduct, saveProduct } from "@/lib/portal/api";
 import type { Product } from "@/lib/portal/types";
 import { money } from "@/lib/portal/format";
@@ -102,8 +101,13 @@ function rowsFromSheet(records: Record<string, unknown>[]): ImportRow[] {
   });
 }
 
+async function spreadsheet() {
+  return import("xlsx");
+}
+
 function downloadTemplate() {
-  const sheet = XLSX.utils.json_to_sheet([
+  void spreadsheet().then((XLSX) => {
+    const sheet = XLSX.utils.json_to_sheet([
     {
       SKU: "MT-L16",
       Name: "Studio laptop 16",
@@ -119,7 +123,8 @@ function downloadTemplate() {
   sheet["!cols"] = [12, 24, 16, 42, 42, 12, 14, 16, 28].map((wch) => ({ wch }));
   const book = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(book, sheet, "Catalog");
-  XLSX.writeFile(book, "catalog-template.xlsx");
+    XLSX.writeFile(book, "catalog-template.xlsx");
+  });
 }
 
 function readProductPhoto(file: File): Promise<string> {
@@ -200,6 +205,7 @@ function ProductsPage() {
 
   async function onSpreadsheet(file: File) {
     try {
+      const XLSX = await spreadsheet();
       const book = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const sheet = book.Sheets[book.SheetNames[0] ?? ""];
       if (!sheet) {

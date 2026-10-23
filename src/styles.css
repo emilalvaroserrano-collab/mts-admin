@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Montserrat", ui-sans-serif, system-ui, sans-serif;
 
-  --color-bg: #f1f1f1;
+  --color-bg: #f3f7f8;
   --color-surface: #ffffff;
-  --color-surface-2: #f7f7f7;
-  --color-ink: #303030;
-  --color-muted: #616161;
-  --color-subtle: #8a8a8a;
-  --color-line: #e3e3e3;
-  --color-line-strong: #c9cccf;
-  --color-accent: #303030;
+  --color-surface-2: #e7f4f5;
+  --color-ink: #003970;
+  --color-muted: #54595f;
+  --color-subtle: #7a7a7a;
+  --color-line: #d5e4e6;
+  --color-line-strong: #b7d0d4;
+  --color-accent: #127e86;
   --color-accent-fg: #ffffff;
-  --color-accent-soft: #f1f1f1;
+  --color-accent-soft: #e5f6f7;
   --color-good: #0c5132;
   --color-good-soft: #cdfee1;
   --color-warn: #5e4200;
@@ -55,7 +55,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid #005bd3;
+    outline: 2px solid #1c9ea6;
     outline-offset: 1px;
   }
 }

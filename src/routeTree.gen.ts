@@ -27,6 +27,7 @@ import { Route as AppOrganizationsOrgIdRouteImport } from './routes/_app/organiz
 import { Route as AppTicketsIndexRouteImport } from './routes/_app/tickets/index'
 import { Route as AppTicketsTicketIdRouteImport } from './routes/_app/tickets/$ticketId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiZendeskWebhookRouteImport } from './routes/api/zendesk/webhook'
 import { Route as StoreSlugIndexRouteImport } from './routes/store/$slug/index'
 import { Route as StoreSlugSkuRouteImport } from './routes/store/$slug/$sku'
 import { Route as StoreSlugAccountRouteImport } from './routes/store/$slug/account'
@@ -121,6 +122,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiZendeskWebhookRoute = ApiZendeskWebhookRouteImport.update({
+  id: '/api/zendesk/webhook',
+  path: '/api/zendesk/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StoreSlugIndexRoute = StoreSlugIndexRouteImport.update({
   id: '/store/$slug/',
   path: '/store/$slug/',
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
@@ -180,6 +187,7 @@ export interface FileRoutesByTo {
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/_app/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/_app/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
@@ -230,6 +239,7 @@ export interface FileRouteTypes {
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
     | '/api/auth/$'
+    | '/api/zendesk/webhook'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
     | '/store/$slug/checkout'
@@ -253,6 +263,7 @@ export interface FileRouteTypes {
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
     | '/api/auth/$'
+    | '/api/zendesk/webhook'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
     | '/store/$slug/checkout'
@@ -277,6 +288,7 @@ export interface FileRouteTypes {
     | '/_app/organizations/$orgId'
     | '/_app/tickets/$ticketId'
     | '/api/auth/$'
+    | '/api/zendesk/webhook'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
     | '/store/$slug/checkout'
@@ -291,6 +303,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiZendeskWebhookRoute: typeof ApiZendeskWebhookRoute
   StoreSlugSkuRoute: typeof StoreSlugSkuRoute
   StoreSlugAccountRoute: typeof StoreSlugAccountRoute
   StoreSlugCheckoutRoute: typeof StoreSlugCheckoutRoute
@@ -425,6 +438,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/zendesk/webhook': {
+      id: '/api/zendesk/webhook'
+      path: '/api/zendesk/webhook'
+      fullPath: '/api/zendesk/webhook'
+      preLoaderRoute: typeof ApiZendeskWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/store/$slug/': {
       id: '/store/$slug/'
       path: '/store/$slug'
@@ -497,6 +517,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiZendeskWebhookRoute: ApiZendeskWebhookRoute,
   StoreSlugSkuRoute: StoreSlugSkuRoute,
   StoreSlugAccountRoute: StoreSlugAccountRoute,
   StoreSlugCheckoutRoute: StoreSlugCheckoutRoute,

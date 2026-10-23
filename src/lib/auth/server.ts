@@ -86,13 +86,17 @@ const grokClientSecret = env("GROK_AUTH_CLIENT_SECRET") ?? PREVIEW_CLIENT_SECRET
 export const authConfigured =
   !authDisabled && Boolean(grokClientId && grokClientSecret);
 
-// This app's own Better Auth origin. When deployed the deployer injects the
-// public URL. In the sandbox live preview there's no fixed URL (each preview gets
-// a dynamic `*.grok-sandbox.com` host), so we hand Better Auth a dynamic baseURL:
-// it derives the origin per-request from the (proxied) host, validated against the
-// preview allowlist, which makes the OAuth `redirect_uri` the concrete preview URL
-// the broker's preview client accepts.
-const explicitBaseURL = env("BETTER_AUTH_URL");
+const auth0Domain = env("AUTH0_DOMAIN")?.replace(/^https?:\/\//, "").replace(/\/$/, "");
+const auth0ClientId = env("AUTH0_CLIENT_ID");
+const auth0ClientSecret = env("AUTH0_CLIENT_SECRET");
+const auth0Ready = Boolean(auth0Domain && auth0ClientId && auth0ClientSecret);
+
+// This app's own Better Auth origin. Deployed apps get BETTER_AUTH_URL, or the
+// Vercel production host. In the sandbox preview there's no fixed URL, so Better
+// Auth derives the origin per-request.
+const vercelHost = env("VERCEL_PROJECT_PRODUCTION_URL") ?? env("VERCEL_URL");
+const explicitBaseURL =
+  env("BETTER_AUTH_URL") ?? (vercelHost ? `https://${vercelHost}` : undefined);
 // Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
 // requires a mutable `allowedHosts: string[]`.
 const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
@@ -151,33 +155,51 @@ export const SESSION_TOKEN_COOKIE = "__Host-grok-auth.session_token";
 
 // Built separately so the `betterAuth({...})` call stays easy to edit without
 // breaking brackets (models often trip on the conditional plugin spread).
-const grokOAuthPlugin = authConfigured
-  ? genericOAuth({
-      config: GROK_PROVIDERS.map(({ providerId, idp }) => ({
-        providerId,
-        clientId: grokClientId as string,
-        clientSecret: grokClientSecret as string,
-        // Prefer static endpoints over `discoveryUrl` so initiating (and
-        // completing) OAuth does not wait on a broker discovery fetch.
-        authorizationUrl: grokAuthorizationUrl,
-        tokenUrl: grokTokenUrl,
-        userInfoUrl: grokUserInfoUrl,
+const grokOAuthConfigs = authConfigured
+  ? GROK_PROVIDERS.map(({ providerId, idp }) => ({
+      providerId,
+      clientId: grokClientId as string,
+      clientSecret: grokClientSecret as string,
+      // Prefer static endpoints over `discoveryUrl` so initiating (and
+      // completing) OAuth does not wait on a broker discovery fetch.
+      authorizationUrl: grokAuthorizationUrl,
+      tokenUrl: grokTokenUrl,
+      userInfoUrl: grokUserInfoUrl,
+      scopes: ["openid", "profile", "email"],
+      // `prompt: "login"` forces the broker to re-authenticate against the
+      // upstream on every sign-in instead of silently reusing an existing
+      // broker session. Combined with the broker sending Google
+      // `prompt=select_account`, the user always gets the account chooser
+      // and can pick (or switch) which account to sign in with.
+      authorizationUrlParams: { idp, prompt: "login" },
+    }))
+  : [];
+
+const auth0OAuthConfig = auth0Ready
+  ? [
+      {
+        providerId: "auth0",
+        clientId: auth0ClientId as string,
+        clientSecret: auth0ClientSecret as string,
+        authorizationUrl: `https://${auth0Domain}/authorize`,
+        tokenUrl: `https://${auth0Domain}/oauth/token`,
+        userInfoUrl: `https://${auth0Domain}/userinfo`,
         scopes: ["openid", "profile", "email"],
-        // `prompt: "login"` forces the broker to re-authenticate against the
-        // upstream on every sign-in instead of silently reusing an existing
-        // broker session. Combined with the broker sending Google
-        // `prompt=select_account`, the user always gets the account chooser
-        // and can pick (or switch) which account to sign in with.
-        authorizationUrlParams: { idp, prompt: "login" },
-      })),
-    })
-  : null;
+        pkce: true,
+      },
+    ]
+  : [];
+
+const oauthPlugin =
+  grokOAuthConfigs.length || auth0OAuthConfig.length
+    ? genericOAuth({ config: [...grokOAuthConfigs, ...auth0OAuthConfig] })
+    : null;
 
 export const auth = betterAuth({
   baseURL,
   // Deployed apps inject BETTER_AUTH_SECRET. Preview: process-stable secret on
   // globalThis so HMR doesn't invalidate PGLite-backed sessions (see above).
-  secret: env("BETTER_AUTH_SECRET") ?? previewAuthSecret(),
+  secret: env("BETTER_AUTH_SECRET") ?? env("AUTH0_SECRET") ?? previewAuthSecret(),
   database,
 
   // CSRF / origin check for credentialed auth POSTs (email sign-up/sign-in, …).
@@ -197,6 +219,7 @@ export const auth = betterAuth({
       enabled: true,
       trustedProviders: [
         ...GROK_PROVIDERS.map((p) => p.providerId),
+        "auth0",
         GATE_PROVIDER_ID,
       ],
       // X's synthetic email is never "verified", so don't gate linking on the
@@ -237,7 +260,7 @@ export const auth = betterAuth({
 
     // One genericOAuth provider per upstream (when auth is on), all federating
     // to the broker with the SAME client and differing only by the `idp` hint.
-    ...(grokOAuthPlugin ? [grokOAuthPlugin] : []),
+    ...(oauthPlugin ? [oauthPlugin] : []),
 
     // Accept `Authorization: Bearer <session-token>` as an alternative to the
     // cookie. Needed for the LIVE PREVIEW: the app runs in an embedded iframe

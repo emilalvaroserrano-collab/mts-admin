@@ -179,6 +179,12 @@ export type Integration = {
   lastSyncAt: string | null;
   lastStatus: string;
   lastError: string;
+  conversationsReady: boolean;
+  conversationsAppId: string;
+  webhookReady: boolean;
+  webhookId: string;
+  oauthReady: boolean;
+  oauthClientId: string;
 };
 
 export type PortalSettings = {

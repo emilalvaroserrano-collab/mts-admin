@@ -84,8 +84,8 @@ export function Shell({ children }: { children: ReactNode }) {
                 aria-current={active ? "page" : undefined}
                 className={
                   active
-                    ? "flex h-8 items-center gap-2 rounded-lg bg-[#f1f1f1] px-2 text-[13px] font-semibold text-ink"
-                    : "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-[#f7f7f7] hover:text-ink"
+                    ? "flex h-8 items-center gap-2 rounded-lg bg-accent-soft px-2 text-[13px] font-semibold text-ink"
+                    : "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-surface-2 hover:text-ink"
                 }
               >
                 <Icon className="size-4 shrink-0" strokeWidth={1.75} />
@@ -96,7 +96,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   href={`/store/${storeSlug(info?.brandName ?? "Manage Tech Service")}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-[#f7f7f7] hover:text-ink"
+                  className="flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] font-medium text-muted hover:bg-surface-2 hover:text-ink"
                 >
                   <Eye className="size-4 shrink-0" strokeWidth={1.75} />
                   Online Shop
@@ -144,7 +144,7 @@ export function Shell({ children }: { children: ReactNode }) {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search tickets"
               aria-label="Search tickets"
-              className="h-8 border-transparent bg-[#f1f1f1]"
+              className="h-8 border-transparent bg-surface-2"
             />
           </form>
           <UserButton />

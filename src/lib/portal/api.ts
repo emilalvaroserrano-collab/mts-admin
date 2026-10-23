@@ -11,6 +11,7 @@ import {
   probeAlternative,
   refreshAlternativePayment,
 } from "./alternative";
+import { conversationsConfig, testConversations } from "./zendesk-conversations";
 import type {
   Actor,
   Audit,
@@ -403,13 +404,33 @@ function basicAuth(email: string, apiToken: string) {
   return btoa(raw);
 }
 
-type ZSettings = { subdomain: string; email: string; apiToken: string; fromEnv: boolean };
+type ZSettings = {
+  subdomain: string;
+  email: string;
+  apiToken: string;
+  fromEnv: boolean;
+  oauthClientId: string;
+  oauthClientSecret: string;
+  oauthScopes: string;
+};
 
 function envZendesk(): ZSettings {
-  const subdomain = cleanSubdomain(process.env.ZENDESK_SUBDOMAIN || process.env.ZENDESK_HOST || "");
+  const clientId = (process.env.ZENDESK_OAUTH_CLIENT_ID || "").trim();
+  const clientSecret = (process.env.ZENDESK_OAUTH_CLIENT_SECRET || "").trim();
+  const tokenUrl = process.env.ZENDESK_OAUTH_TOKEN_URL || "";
+  const subdomain = cleanSubdomain(process.env.ZENDESK_SUBDOMAIN || process.env.ZENDESK_HOST || tokenUrl || (clientId ? "shop" : ""));
   const email = (process.env.ZENDESK_EMAIL || process.env.ZENDESK_AGENT_EMAIL || "").trim();
   const apiToken = (process.env.ZENDESK_API_TOKEN || process.env.ZENDESK_TOKEN || process.env.ZENDESK_API_KEY || "").trim();
-  return { subdomain, email, apiToken, fromEnv: Boolean(subdomain && email && apiToken) };
+  const oauth = Boolean(subdomain && clientId && clientSecret);
+  return {
+    subdomain,
+    email,
+    apiToken,
+    fromEnv: oauth || Boolean(subdomain && email && apiToken),
+    oauthClientId: clientId,
+    oauthClientSecret: clientSecret,
+    oauthScopes: (process.env.ZENDESK_OAUTH_SCOPES || "read write").trim(),
+  };
 }
 
 async function readZendesk(sql: Sql): Promise<ZSettings> {
@@ -421,6 +442,9 @@ async function readZendesk(sql: Sql): Promise<ZSettings> {
     email: envz.email || (row ? s(row, "email") : ""),
     apiToken: envz.apiToken || (row ? s(row, "api_token") : ""),
     fromEnv: envz.fromEnv,
+    oauthClientId: envz.oauthClientId,
+    oauthClientSecret: envz.oauthClientSecret,
+    oauthScopes: envz.oauthScopes,
   };
 }
 
@@ -428,22 +452,66 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function oauthReady(settings: ZSettings) {
+  return Boolean(settings.subdomain && settings.oauthClientId && settings.oauthClientSecret);
+}
+
+type OauthCache = { key: string; token: string; expiresAt: number };
+const oauthCache = globalThis as typeof globalThis & { __zendeskOauth?: OauthCache };
+
+async function zendeskAccessToken(settings: ZSettings) {
+  const key = `${settings.subdomain}:${settings.oauthClientId}`;
+  const cached = oauthCache.__zendeskOauth;
+  if (cached && cached.key === key && cached.expiresAt > Date.now() + 15_000) return cached.token;
+  const response = await fetch(`https://${settings.subdomain}.zendesk.com/oauth/tokens`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({
+      grant_type: "client_credentials",
+      client_id: settings.oauthClientId,
+      client_secret: settings.oauthClientSecret,
+      scope: settings.oauthScopes,
+    }),
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`Zendesk OAuth returned ${response.status}. ${text.replaceAll(settings.oauthClientSecret, "").slice(0, 180)}`);
+  }
+  const body = JSON.parse(text) as { access_token?: string; expires_in?: number };
+  if (!body.access_token) throw new Error("Zendesk OAuth did not return an access token.");
+  const ttl = typeof body.expires_in === "number" && body.expires_in > 60 ? body.expires_in * 1000 : 50 * 60 * 1000;
+  oauthCache.__zendeskOauth = { key, token: body.access_token, expiresAt: Date.now() + ttl };
+  return body.access_token;
+}
+
+async function zendeskAuthorization(settings: ZSettings) {
+  if (oauthReady(settings)) return `Bearer ${await zendeskAccessToken(settings)}`;
+  if (settings.subdomain && settings.email && settings.apiToken) {
+    return `Basic ${basicAuth(settings.email, settings.apiToken)}`;
+  }
+  throw new Error("Zendesk is not connected. Set ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET for shop, or an API token.");
+}
+
 async function zendesk(settings: ZSettings, path: string, init?: RequestInit) {
-  if (!settings.subdomain || !settings.email || !settings.apiToken) {
-    throw new Error("Zendesk is not connected. Set ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, and ZENDESK_API_TOKEN.");
+  if (!settings.subdomain || (!oauthReady(settings) && !(settings.email && settings.apiToken))) {
+    throw new Error("Zendesk is not connected. Set ZENDESK_OAUTH_CLIENT_ID and ZENDESK_OAUTH_CLIENT_SECRET for shop, or an API token.");
   }
   const url = path.startsWith("http") ? path : `https://${settings.subdomain}.zendesk.com/api/v2${path}`;
-  const run = () =>
+  const run = async () =>
     fetch(url, {
       ...init,
       headers: {
-        Authorization: `Basic ${basicAuth(settings.email, settings.apiToken)}`,
+        Authorization: await zendeskAuthorization(settings),
         Accept: "application/json",
         "Content-Type": "application/json",
         ...(init?.headers ?? {}),
       },
     });
   let response = await run();
+  if (response.status === 401 && oauthReady(settings)) {
+    oauthCache.__zendeskOauth = undefined;
+    response = await run();
+  }
   if (response.status === 429) {
     const wait = Math.min(Number(response.headers.get("retry-after") || "2") || 2, 8);
     await sleep(wait * 1000);
@@ -452,7 +520,7 @@ async function zendesk(settings: ZSettings, path: string, init?: RequestInit) {
   const text = await response.text();
   if (response.status === 429) throw new Error("Zendesk rate limit reached. Wait a moment and try again.");
   if (!response.ok) {
-    let detail = text.replaceAll(settings.apiToken, "").slice(0, 180);
+    let detail = text.replaceAll(settings.apiToken, "").replaceAll(settings.oauthClientSecret, "").slice(0, 180);
     try {
       const parsed = JSON.parse(text) as { error?: unknown; description?: unknown };
       if (typeof parsed.description === "string") detail = parsed.description.slice(0, 180);
@@ -780,8 +848,8 @@ export const getShell = createServerFn({ method: "GET" })
       actor,
       brandName: setting ? s(setting, "brand_name") : "Manage Tech Service",
       tagline: setting ? s(setting, "tagline") : "",
-      zendeskConnected: Boolean(live.subdomain && live.email && live.apiToken),
-      zendeskStatus: link ? s(link, "last_status") : live.apiToken ? "ready" : "not_connected",
+      zendeskConnected: Boolean(oauthReady(live) || (live.subdomain && live.email && live.apiToken) || conversationsConfig().ready),
+      zendeskStatus: link ? s(link, "last_status") : oauthReady(live) || live.apiToken ? "ready" : "not_connected",
     };
   });
 
@@ -2031,6 +2099,7 @@ export const getIntegration = createServerFn({ method: "GET" })
     const sql = await getSql();
     const actor = await loadActor(sql, context.userId);
     const live = await readZendesk(sql);
+    const conversations = conversationsConfig();
     const rows = await sql<Row>`select * from integration_settings where id = 1`;
     const row = rows[0] ?? {};
     const orgs = await sql.query<Row>(
@@ -2038,7 +2107,7 @@ export const getIntegration = createServerFn({ method: "GET" })
       [actor.organizationId],
     );
     let lastStatus = s(row, "last_status");
-    if (live.fromEnv && (!lastStatus || lastStatus === "not_connected" || lastStatus === "saved")) lastStatus = "ready";
+    if ((live.fromEnv || conversations.ready) && (!lastStatus || lastStatus === "not_connected" || lastStatus === "saved")) lastStatus = "ready";
     return {
       subdomain: live.subdomain,
       email: live.email,
@@ -2047,6 +2116,12 @@ export const getIntegration = createServerFn({ method: "GET" })
       lastSyncAt: s(row, "last_sync_at") || null,
       lastStatus,
       lastError: s(row, "last_error"),
+      conversationsReady: conversations.ready,
+      conversationsAppId: conversations.appId,
+      webhookReady: Boolean(conversations.webhookSecret),
+      webhookId: conversations.webhookId,
+      oauthReady: oauthReady(live),
+      oauthClientId: live.oauthClientId,
       orgs: orgs.map(mapOrg),
     };
   });
@@ -2093,7 +2168,29 @@ export const testIntegration = createServerFn({ method: "POST" })
     const actor = await loadActor(sql, context.userId);
     assertWrite(actor);
     const settings = await readZendesk(sql);
+    const conversations = conversationsConfig();
+    if (!oauthReady(settings) && !(settings.subdomain && settings.email && settings.apiToken)) {
+      if (!conversations.ready) {
+        throw new Error("Zendesk is not connected. Add the Support API token or the Conversations API key.");
+      }
+      try {
+        const result = await testConversations();
+        await rememberZendesk(sql, "connected", "", false);
+        await audit(sql, actor, "Tested Zendesk", "conversations", result.name);
+        return { ok: true, name: result.name };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Connection failed.";
+        await rememberZendesk(sql, "error", message, false);
+        throw new Error(message);
+      }
+    }
     try {
+      if (oauthReady(settings)) {
+        await zendesk(settings, "/tickets.json?per_page=1");
+        await rememberZendesk(sql, "connected", "", false);
+        await audit(sql, actor, "Tested Zendesk", settings.subdomain, "OAuth client credentials");
+        return { ok: true, name: `${settings.subdomain} OAuth` };
+      }
       const me = await zendesk(settings, "/users/me.json");
       const user = obj(me.user);
       const name = typeof user.name === "string" ? user.name : settings.email;

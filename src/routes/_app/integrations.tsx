@@ -76,7 +76,7 @@ function IntegrationPage() {
       <PageHeader
         eyebrow="Connection"
         title="Zendesk"
-        description="Set ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, and ZENDESK_API_TOKEN on the server. The desk then syncs tickets, posts replies, and files order tickets."
+        description="The shop account uses OAuth client credentials. Messaging still uses the Conversations API key."
       />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Panel>
@@ -88,7 +88,7 @@ function IntegrationPage() {
             }}
           >
             <Field label="Subdomain" hint={locked ? "Taken from ZENDESK_SUBDOMAIN." : "The part before .zendesk.com"}>
-              <Input value={subdomain} onChange={(event) => setSubdomain(event.target.value)} placeholder="managetech" autoComplete="off" readOnly={locked} />
+              <Input value={subdomain} onChange={(event) => setSubdomain(event.target.value)} placeholder="shop" autoComplete="off" readOnly={locked} />
             </Field>
             <Field label="Agent email" hint={locked ? "Taken from ZENDESK_EMAIL." : undefined}>
               <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="off" readOnly={locked} />
@@ -138,6 +138,17 @@ function IntegrationPage() {
               {data.lastSyncAt ? `Last sync ${ago(data.lastSyncAt)}` : "No ticket sync yet."}
             </p>
             {data.lastError ? <p className="mt-2 text-sm text-bad">{data.lastError}</p> : null}
+            <div className="mt-4 border-t border-line pt-3 text-sm">
+              <p className="font-medium">OAuth client</p>
+              <p className="mt-1 text-muted">
+                {data.oauthReady ? `Client credentials · ${data.oauthClientId} · https://${data.subdomain || "shop"}.zendesk.com/oauth/tokens` : "Not set"}
+              </p>
+              <p className="mt-3 font-medium">Conversations API</p>
+              <p className="mt-1 text-muted">{data.conversationsReady ? `Key set for app ${data.conversationsAppId}` : "Not set"}</p>
+              <p className="mt-3 font-medium">Webhook</p>
+              <p className="mt-1 text-muted">{data.webhookReady ? `Signing secret set${data.webhookId ? ` · ${data.webhookId}` : ""}` : "Not set"}</p>
+              <p className="mt-1 break-all text-xs text-muted">POST /api/zendesk/webhook</p>
+            </div>
           </Panel>
           <Panel>
             <h2 className="text-sm font-semibold">Company map</h2>
