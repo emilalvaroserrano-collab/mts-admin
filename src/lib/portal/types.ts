@@ -133,6 +133,19 @@ export type Order = {
   paymentMethod: string;
   paymentUrl: string;
   paymentStatus: string;
+  shipName: string;
+  shipEmail: string;
+  shipPhone: string;
+  shipAddress: string;
+  shipCity: string;
+  shipRegion: string;
+  shipPostal: string;
+  shipCountry: string;
+  shippingMethod: string;
+  shippingCents: number;
+  shipmentStatus: string;
+  trackingNumber: string;
+  trackingCarrier: string;
   items: OrderItem[];
 };
 
@@ -285,5 +298,55 @@ export type Storefront = {
   supportEmail: string;
   closed: boolean;
   products: Product[];
+};
+
+export type ShopCustomer = {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  region: string;
+  postal: string;
+  country: string;
+};
+
+export type ShopOrderItem = {
+  name: string;
+  sku: string;
+  quantity: number;
+  unitPriceCents: number;
+};
+
+export type ShopOrder = {
+  id: number;
+  number: string;
+  createdAt: string;
+  status: string;
+  shipmentStatus: string;
+  trackingNumber: string;
+  trackingCarrier: string;
+  shippingMethod: string;
+  paymentMethod: string;
+  paymentUrl: string;
+  totalCents: number;
+  shipName: string;
+  shipAddress: string;
+  shipCity: string;
+  shipRegion: string;
+  shipPostal: string;
+  shipCountry: string;
+  items: ShopOrderItem[];
+};
+
+export type ShopAccount = {
+  customer: ShopCustomer;
+  orders: ShopOrder[];
+};
+
+export type ShopCheckoutInfo = {
+  methods: string[];
+  invoiceTerms: string;
+  alternativeEnvironment: "sandbox" | "live";
 };
 

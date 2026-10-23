@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { getOrder, linkOrderTicket, refreshAlternativeOrder, updateOrder } from "@/lib/portal/api";
 import { day, money, paymentLabel } from "@/lib/portal/format";
 import { orderPdfUrl } from "@/lib/portal/pdf";
-import { Button, ErrorNote, Field, Loading, PageHeader, Panel, Select, StatusBadge, Textarea, errorText } from "@/components/ui";
+import { Button, ErrorNote, Field, Input, Loading, PageHeader, Panel, Select, StatusBadge, Textarea, errorText } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/orders/$orderId")({
   component: OrderPage,
@@ -21,16 +21,22 @@ function OrderPage() {
   const [status, setStatus] = useState("pending");
   const [approvalNote, setApprovalNote] = useState("");
   const [processingNote, setProcessingNote] = useState("");
+  const [shipmentStatus, setShipmentStatus] = useState("unfulfilled");
+  const [trackingNumber, setTrackingNumber] = useState("");
+  const [trackingCarrier, setTrackingCarrier] = useState("");
 
   useEffect(() => {
     if (!query.data) return;
     setStatus(query.data.order.status);
     setApprovalNote(query.data.order.approvalNote);
     setProcessingNote(query.data.order.processingNote);
+    setShipmentStatus(query.data.order.shipmentStatus || "unfulfilled");
+    setTrackingNumber(query.data.order.trackingNumber);
+    setTrackingCarrier(query.data.order.trackingCarrier);
   }, [query.data]);
 
   const save = useMutation({
-    mutationFn: () => updateOrder({ data: { id, status, approvalNote, processingNote } }),
+    mutationFn: () => updateOrder({ data: { id, status, approvalNote, processingNote, shipmentStatus, trackingNumber, trackingCarrier } }),
     onSuccess: () => {
       toast.success("Order updated");
       client.invalidateQueries({ queryKey: ["order", id] });
@@ -168,6 +174,20 @@ function OrderPage() {
               </Field>
               <Field label="Approval">
                 <Textarea value={approvalNote} onChange={(event) => setApprovalNote(event.target.value)} />
+              </Field>
+              <Field label="Shipment">
+                <Select value={shipmentStatus} onChange={(event) => setShipmentStatus(event.target.value)}>
+                  <option value="unfulfilled">Not shipped</option>
+                  <option value="shipped">Shipped</option>
+                  <option value="out_for_delivery">Out for delivery</option>
+                  <option value="delivered">Delivered</option>
+                </Select>
+              </Field>
+              <Field label="Carrier">
+                <Input value={trackingCarrier} onChange={(event) => setTrackingCarrier(event.target.value)} placeholder="UPS, FedEx…" />
+              </Field>
+              <Field label="Tracking number">
+                <Input value={trackingNumber} onChange={(event) => setTrackingNumber(event.target.value)} />
               </Field>
               <Field label="Bench note">
                 <Textarea value={processingNote} onChange={(event) => setProcessingNote(event.target.value)} />

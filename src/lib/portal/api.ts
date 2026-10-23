@@ -30,6 +30,10 @@ import type {
   Product,
   Role,
   ShellInfo,
+  ShopAccount,
+  ShopCheckoutInfo,
+  ShopCustomer,
+  ShopOrder,
   Staff,
   Storefront,
   Ticket,
@@ -197,6 +201,19 @@ function mapOrder(row: Row, items: OrderItem[] = []): Order {
     paymentMethod: s(row, "payment_method"),
     paymentUrl: s(row, "payment_url"),
     paymentStatus: s(row, "payment_status"),
+    shipName: s(row, "ship_name"),
+    shipEmail: s(row, "ship_email"),
+    shipPhone: s(row, "ship_phone"),
+    shipAddress: s(row, "ship_address"),
+    shipCity: s(row, "ship_city"),
+    shipRegion: s(row, "ship_region"),
+    shipPostal: s(row, "ship_postal"),
+    shipCountry: s(row, "ship_country"),
+    shippingMethod: s(row, "shipping_method"),
+    shippingCents: n(row, "shipping_cents"),
+    shipmentStatus: s(row, "shipment_status") || "unfulfilled",
+    trackingNumber: s(row, "tracking_number"),
+    trackingCarrier: s(row, "tracking_carrier"),
     items,
   };
 }
@@ -1718,12 +1735,17 @@ export const updateOrder = createServerFn({ method: "POST" })
     const id = intish(raw.id);
     const status = str(raw.status, 32);
     const allowed = ["pending", "approved", "processing", "fulfilled", "cancelled"];
+    const shipments = ["unfulfilled", "shipped", "out_for_delivery", "delivered"];
+    const shipmentStatus = str(raw.shipmentStatus, 32);
     if (!id || !allowed.includes(status)) throw new Error("Choose an order status.");
     return {
       id,
       status,
       approvalNote: str(raw.approvalNote, 2000),
       processingNote: str(raw.processingNote, 2000),
+      shipmentStatus: shipments.includes(shipmentStatus) ? shipmentStatus : "unfulfilled",
+      trackingNumber: str(raw.trackingNumber, 80),
+      trackingCarrier: str(raw.trackingCarrier, 40),
     };
   })
   .handler(async ({ context, data }) => {
@@ -1736,6 +1758,9 @@ export const updateOrder = createServerFn({ method: "POST" })
         status = ${data.status},
         approval_note = ${data.approvalNote},
         processing_note = ${data.processingNote},
+        shipment_status = ${data.shipmentStatus},
+        tracking_number = ${data.trackingNumber},
+        tracking_carrier = ${data.trackingCarrier},
         updated_at = now()
       where id = ${data.id}
     `;
@@ -2523,13 +2548,212 @@ export const getStorefront = createServerFn({ method: "GET" }).handler(async ():
   };
 });
 
+export const getShopCheckout = createServerFn({ method: "GET" }).handler(async (): Promise<ShopCheckoutInfo> => {
+  const sql = await getSql();
+  const payments = await readPayments(sql);
+  return {
+    methods: payments.methods.length ? payments.methods : ["invoice"],
+    invoiceTerms: payments.invoiceTerms,
+    alternativeEnvironment: payments.alternativeEnvironment,
+  };
+});
+
+const SHIPPING = {
+  standard: { label: "Standard", cents: (subtotal: number) => (subtotal >= 50000 ? 0 : 1500) },
+  express: { label: "Express", cents: () => 2500 },
+} as const;
+
+function shippingChoice(method: string, subtotal: number) {
+  const key = method === "express" ? "express" : "standard";
+  return { method: key, label: SHIPPING[key].label, cents: SHIPPING[key].cents(subtotal) };
+}
+
+async function hashShopPassword(password: string) {
+  const { randomBytes, scryptSync } = await import("node:crypto");
+  const salt = randomBytes(16).toString("hex");
+  const hash = scryptSync(password, salt, 32).toString("hex");
+  return `${salt}:${hash}`;
+}
+
+async function shopPasswordMatches(password: string, stored: string) {
+  const { scryptSync, timingSafeEqual } = await import("node:crypto");
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const next = scryptSync(password, salt, 32);
+  const prev = Buffer.from(hash, "hex");
+  if (prev.length !== next.length) return false;
+  return timingSafeEqual(prev, next);
+}
+
+async function newShopToken() {
+  const { randomBytes } = await import("node:crypto");
+  return randomBytes(32).toString("hex");
+}
+
+function mapShopCustomer(row: Row): ShopCustomer {
+  return {
+    name: s(row, "name"),
+    email: s(row, "email"),
+    phone: s(row, "phone"),
+    address: s(row, "address"),
+    city: s(row, "city"),
+    region: s(row, "region"),
+    postal: s(row, "postal"),
+    country: s(row, "country") || "United States",
+  };
+}
+
+async function shopByToken(sql: Sql, token: string) {
+  if (!token) return undefined;
+  const rows = await sql<Row>`select * from shop_customers where session_token = ${token} limit 1`;
+  return rows[0];
+}
+
+async function shopOrders(sql: Sql, customerId: number, email: string): Promise<ShopOrder[]> {
+  const rows = await sql<Row>`
+    select o.*,
+      coalesce((
+        select sum(oi.quantity * oi.unit_price_cents)::int from order_items oi where oi.order_id = o.id
+      ), 0) as goods_cents
+    from orders o
+    where o.shop_customer_id = ${customerId} or lower(o.ship_email) = ${email}
+    order by o.created_at desc
+  `;
+  const orders: ShopOrder[] = [];
+  for (const row of rows) {
+    const items = await sql<Row>`select * from order_items where order_id = ${n(row, "id")} order by id`;
+    orders.push({
+      id: n(row, "id"),
+      number: `MT-${1000 + n(row, "id")}`,
+      createdAt: s(row, "created_at"),
+      status: s(row, "status"),
+      shipmentStatus: s(row, "shipment_status") || "unfulfilled",
+      trackingNumber: s(row, "tracking_number"),
+      trackingCarrier: s(row, "tracking_carrier"),
+      shippingMethod: s(row, "shipping_method"),
+      paymentMethod: s(row, "payment_method"),
+      paymentUrl: s(row, "payment_url"),
+      totalCents: n(row, "goods_cents") + n(row, "shipping_cents"),
+      shipName: s(row, "ship_name"),
+      shipAddress: s(row, "ship_address"),
+      shipCity: s(row, "ship_city"),
+      shipRegion: s(row, "ship_region"),
+      shipPostal: s(row, "ship_postal"),
+      shipCountry: s(row, "ship_country"),
+      items: items.map((item) => ({
+        name: s(item, "product_name"),
+        sku: s(item, "sku"),
+        quantity: n(item, "quantity"),
+        unitPriceCents: n(item, "unit_price_cents"),
+      })),
+    });
+  }
+  return orders;
+}
+
+export const shopRegister = createServerFn({ method: "POST" })
+  .validator((input: unknown) => shopCredentials(input, true))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const existing = await sql<Row>`select id from shop_customers where email = ${data.email}`;
+    if (existing[0]) throw new Error("An account with that email already exists. Sign in instead.");
+    const token = await newShopToken();
+    await sql`
+      insert into shop_customers (email, name, password_hash, session_token)
+      values (${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${token})
+    `;
+    return { token, email: data.email, name: data.name };
+  });
+
+export const shopLogin = createServerFn({ method: "POST" })
+  .validator((input: unknown) => shopCredentials(input, false))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const rows = await sql<Row>`select * from shop_customers where email = ${data.email}`;
+    const row = rows[0];
+    if (!row || !(await shopPasswordMatches(data.password, s(row, "password_hash")))) {
+      throw new Error("Email or password is wrong.");
+    }
+    const token = await newShopToken();
+    await sql`update shop_customers set session_token = ${token} where id = ${n(row, "id")}`;
+    return { token, email: s(row, "email"), name: s(row, "name") };
+  });
+
+export const shopLogout = createServerFn({ method: "POST" })
+  .validator((input: unknown) => ({ token: str(obj(input).token, 80) }))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    if (data.token) await sql`update shop_customers set session_token = '' where session_token = ${data.token}`;
+    return { ok: true };
+  });
+
+export const getShopAccount = createServerFn({ method: "GET" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }): Promise<ShopAccount | null> => {
+    const sql = await getSql();
+    const row = await shopByToken(sql, data);
+    if (!row) return null;
+    return { customer: mapShopCustomer(row), orders: await shopOrders(sql, n(row, "id"), s(row, "email")) };
+  });
+
+export const saveShopProfile = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    if (!token) throw new Error("Sign in again.");
+    return {
+      token,
+      name: str(raw.name, 120),
+      phone: str(raw.phone, 40),
+      address: str(raw.address, 160),
+      city: str(raw.city, 80),
+      region: str(raw.region, 80),
+      postal: str(raw.postal, 20),
+      country: str(raw.country, 80) || "United States",
+    };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const row = await shopByToken(sql, data.token);
+    if (!row) throw new Error("Sign in again.");
+    if (!data.name) throw new Error("Enter your name.");
+    await sql`
+      update shop_customers set
+        name = ${data.name},
+        phone = ${data.phone},
+        address = ${data.address},
+        city = ${data.city},
+        region = ${data.region},
+        postal = ${data.postal},
+        country = ${data.country}
+      where id = ${n(row, "id")}
+    `;
+    return { ok: true };
+  });
+
+function shopCredentials(input: unknown, named: boolean) {
+  const raw = obj(input);
+  const email = str(raw.email, 160).toLowerCase();
+  const password = str(raw.password, 80);
+  const name = str(raw.name, 120);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid email.");
+  if (password.length < 8) throw new Error("Use at least 8 characters.");
+  if (named && !name) throw new Error("Enter your name.");
+  return { email, password, name };
+}
+
 export const placeStorefrontOrder = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const raw = obj(input);
     const name = str(raw.name, 120);
     const email = str(raw.email, 160).toLowerCase();
+    const address = str(raw.address, 160);
+    const city = str(raw.city, 80);
+    const region = str(raw.region, 80);
+    const postal = str(raw.postal, 20);
     if (!name) throw new Error("Enter your name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Enter a valid email.");
+    if (!address || !city || !postal) throw new Error("Enter a shipping address.");
     const itemsRaw = Array.isArray(raw.items) ? raw.items : [];
     const items = itemsRaw
       .map((item) => {
@@ -2538,39 +2762,130 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
       })
       .filter((item) => item.sku && item.quantity > 0 && item.quantity <= 99);
     if (!items.length) throw new Error("Your cart is empty.");
-    return { name, email, company: str(raw.company, 120), notes: str(raw.notes, 1000), items };
+    const shippingMethod = str(raw.shippingMethod, 20) === "express" ? "express" : "standard";
+    return {
+      name,
+      email,
+      phone: str(raw.phone, 40),
+      company: str(raw.company, 120),
+      address,
+      city,
+      region,
+      postal,
+      country: str(raw.country, 80) || "United States",
+      shippingMethod,
+      paymentMethod: str(raw.paymentMethod, 32),
+      notes: str(raw.notes, 1000),
+      password: str(raw.password, 80),
+      token: str(raw.token, 80),
+      items,
+    };
   })
   .handler(async ({ data }) => {
     const sql = await getSql();
     const orgs = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
     const org = orgs[0];
     if (!org) throw new Error("The online shop is not ready to take orders.");
+    const payments = await readPayments(sql);
+    const method = payments.methods.includes(data.paymentMethod) ? data.paymentMethod : payments.methods[0] || "invoice";
     const skus = data.items.map((item) => item.sku);
     const products = await sql.query<Row>(
       `select * from products where available = true and sku in (${skus.map((_, index) => `$${index + 1}`).join(",")})`,
       skus,
     );
     if (products.length !== new Set(skus).size) throw new Error("A product in your cart is no longer available.");
-    const note = [`Web order`, data.name, data.email, data.company, data.notes].filter(Boolean).join(" · ");
+    const subtotal = data.items.reduce((sum, item) => {
+      const product = products.find((row) => s(row, "sku") === item.sku);
+      return sum + (product ? n(product, "price_cents") * item.quantity : 0);
+    }, 0);
+    const shipping = shippingChoice(data.shippingMethod, subtotal);
+    let customerId: number | null = null;
+    let token = "";
+    const signedIn = await shopByToken(sql, data.token);
+    if (signedIn && s(signedIn, "email") === data.email) customerId = n(signedIn, "id");
+    if (!customerId && data.password.length >= 8) {
+      const existing = await sql<Row>`select id from shop_customers where email = ${data.email}`;
+      if (!existing[0]) {
+        token = await newShopToken();
+        const insertedCustomer = await sql<Row>`
+          insert into shop_customers (email, name, password_hash, phone, address, city, region, postal, country, session_token)
+          values (
+            ${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${data.phone},
+            ${data.address}, ${data.city}, ${data.region}, ${data.postal}, ${data.country}, ${token}
+          )
+          returning id
+        `;
+        customerId = n(insertedCustomer[0], "id");
+      }
+    }
+    if (!customerId) {
+      const byEmail = await sql<Row>`select id from shop_customers where email = ${data.email}`;
+      if (byEmail[0]) customerId = n(byEmail[0], "id");
+    }
+    const note = [data.company, data.notes].filter(Boolean).join(" · ");
     const inserted = await sql<Row>`
-      insert into orders (organization_id, customer_user_id, status, notes, approval_note, payment_method)
-      values (${n(org, "id")}, null, 'pending', ${note}, 'Placed from the online shop.', 'invoice')
+      insert into orders (
+        organization_id, customer_user_id, shop_customer_id, status, notes, approval_note, payment_method,
+        ship_name, ship_email, ship_phone, ship_address, ship_city, ship_region, ship_postal, ship_country,
+        shipping_method, shipping_cents, shipment_status
+      ) values (
+        ${n(org, "id")}, null, ${customerId}, 'pending', ${note}, 'Placed from the online shop.', ${method},
+        ${data.name}, ${data.email}, ${data.phone}, ${data.address}, ${data.city}, ${data.region}, ${data.postal}, ${data.country},
+        ${shipping.method}, ${shipping.cents}, 'unfulfilled'
+      )
       returning id
     `;
     const id = n(inserted[0], "id");
-    for (const item of data.items) {
+    const lines = data.items.map((item) => {
       const product = products.find((row) => s(row, "sku") === item.sku);
-      if (!product) continue;
+      return {
+        description: product ? s(product, "name") : item.sku,
+        amount: product ? n(product, "price_cents") / 100 : 0,
+        quantity: item.quantity,
+        product,
+      };
+    });
+    for (const line of lines) {
+      if (!line.product) continue;
       await sql`
         insert into order_items (order_id, product_id, product_name, sku, quantity, unit_price_cents)
-        values (${id}, ${n(product, "id")}, ${s(product, "name")}, ${s(product, "sku")}, ${item.quantity}, ${n(product, "price_cents")})
+        values (${id}, ${n(line.product, "id")}, ${s(line.product, "name")}, ${s(line.product, "sku")}, ${line.quantity}, ${n(line.product, "price_cents")})
       `;
+    }
+    let paymentUrl = "";
+    if (method === "alternative") {
+      const creds = await loadAlternativeCreds(sql);
+      if (creds) {
+        try {
+          const due = new Date();
+          due.setDate(due.getDate() + 30);
+          const checkout = await createAlternativeCheckout(creds, {
+            reference: `MT-${1000 + id}`,
+            returnUrl: ALTERNATIVE_PORTAL,
+            externalId: `mts-shop-${data.email}`,
+            name: data.name,
+            email: data.email,
+            existingCustomerId: "",
+            dueDate: due.toISOString().slice(0, 10),
+            lines: lines.map((line) => ({ description: line.description, amount: line.amount, quantity: line.quantity })),
+          });
+          paymentUrl = checkout.url;
+          await sql`
+            update orders set payment_url = ${paymentUrl}, alternative_invoice_id = ${checkout.invoiceId},
+              alternative_request_id = ${checkout.requestId}, payment_status = ${checkout.paymentStatus}
+            where id = ${id}
+          `;
+        } catch {
+          paymentUrl = ALTERNATIVE_PORTAL;
+          await sql`update orders set payment_url = ${paymentUrl} where id = ${id}`;
+        }
+      }
     }
     await sql`
       insert into audit_logs (actor_user_id, actor_name, action, target, detail)
       values ('', 'Online shop', 'Created order', ${`MT-${1000 + id}`}, ${data.email})
     `;
-    return { id, number: `MT-${1000 + id}` };
+    return { id, number: `MT-${1000 + id}`, paymentUrl, token, totalCents: subtotal + shipping.cents };
   });
 
 

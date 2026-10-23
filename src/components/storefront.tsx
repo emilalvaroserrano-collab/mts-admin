@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "@tanstack/react-router";
-import { ShoppingBag, X } from "lucide-react";
+import { ShoppingBag, UserRound, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { getStorefront } from "@/lib/portal/api";
 import { money } from "@/lib/portal/format";
@@ -40,13 +40,20 @@ export function StoreFrame({ children }: { children: ReactNode }) {
             <span className="truncate text-sm font-semibold">{store.brandName}</span>
           </Link>
           <nav className="ml-auto hidden items-center gap-5 text-[13px] text-muted sm:flex">
-            <a href="#catalog">Shop</a>
-            <a href="#catalog">Laptops</a>
-            <a href="#catalog">PCs</a>
+            <Link to="/store/$slug" params={{ slug: store.slug }}>Shop</Link>
+            <Link to="/store/$slug/account" params={{ slug: store.slug }}>Account</Link>
           </nav>
+          <Link
+            to="/store/$slug/account"
+            params={{ slug: store.slug }}
+            className="ml-auto grid size-10 place-items-center rounded-full border border-line sm:ml-0"
+            aria-label="Account"
+          >
+            <UserRound className="size-4" />
+          </Link>
           <button
             type="button"
-            className="ml-auto grid h-10 grid-flow-col items-center gap-2 rounded-full border border-line px-3 text-[13px] font-medium sm:ml-0"
+            className="grid h-10 grid-flow-col items-center gap-2 rounded-full border border-line px-3 text-[13px] font-medium"
             onClick={() => setCartOpen(true)}
           >
             <ShoppingBag className="size-4" />

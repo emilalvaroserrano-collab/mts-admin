@@ -28,6 +28,7 @@ import { Route as AppTicketsTicketIdRouteImport } from './routes/_app/tickets/$t
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as StoreSlugIndexRouteImport } from './routes/store/$slug/index'
 import { Route as StoreSlugSkuRouteImport } from './routes/store/$slug/$sku'
+import { Route as StoreSlugAccountRouteImport } from './routes/store/$slug/account'
 import { Route as StoreSlugCheckoutRouteImport } from './routes/store/$slug/checkout'
 
 const AppRoute = AppRouteImport.update({
@@ -124,6 +125,11 @@ const StoreSlugSkuRoute = StoreSlugSkuRouteImport.update({
   path: '/store/$slug/$sku',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoreSlugAccountRoute = StoreSlugAccountRouteImport.update({
+  id: '/store/$slug/account',
+  path: '/store/$slug/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StoreSlugCheckoutRoute = StoreSlugCheckoutRouteImport.update({
   id: '/store/$slug/checkout',
   path: '/store/$slug/checkout',
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
+  '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
   '/orders/': typeof AppOrdersIndexRoute
   '/organizations/': typeof AppOrganizationsIndexRoute
@@ -166,6 +173,7 @@ export interface FileRoutesByTo {
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
+  '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
   '/orders': typeof AppOrdersIndexRoute
   '/organizations': typeof AppOrganizationsIndexRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/_app/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
+  '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
   '/_app/orders/': typeof AppOrdersIndexRoute
   '/_app/organizations/': typeof AppOrganizationsIndexRoute
@@ -212,6 +221,7 @@ export interface FileRouteTypes {
     | '/tickets/$ticketId'
     | '/api/auth/$'
     | '/store/$slug/$sku'
+    | '/store/$slug/account'
     | '/store/$slug/checkout'
     | '/orders/'
     | '/organizations/'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/tickets/$ticketId'
     | '/api/auth/$'
     | '/store/$slug/$sku'
+    | '/store/$slug/account'
     | '/store/$slug/checkout'
     | '/orders'
     | '/organizations'
@@ -255,6 +266,7 @@ export interface FileRouteTypes {
     | '/_app/tickets/$ticketId'
     | '/api/auth/$'
     | '/store/$slug/$sku'
+    | '/store/$slug/account'
     | '/store/$slug/checkout'
     | '/_app/orders/'
     | '/_app/organizations/'
@@ -267,6 +279,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   StoreSlugSkuRoute: typeof StoreSlugSkuRoute
+  StoreSlugAccountRoute: typeof StoreSlugAccountRoute
   StoreSlugCheckoutRoute: typeof StoreSlugCheckoutRoute
   StoreSlugIndexRoute: typeof StoreSlugIndexRoute
 }
@@ -406,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StoreSlugSkuRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/store/$slug/account': {
+      id: '/store/$slug/account'
+      path: '/store/$slug/account'
+      fullPath: '/store/$slug/account'
+      preLoaderRoute: typeof StoreSlugAccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/store/$slug/checkout': {
       id: '/store/$slug/checkout'
       path: '/store/$slug/checkout'
@@ -457,6 +477,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   StoreSlugSkuRoute: StoreSlugSkuRoute,
+  StoreSlugAccountRoute: StoreSlugAccountRoute,
   StoreSlugCheckoutRoute: StoreSlugCheckoutRoute,
   StoreSlugIndexRoute: StoreSlugIndexRoute,
 }

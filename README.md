@@ -91,7 +91,7 @@ flowchart LR
   fn --> alt
 ```
 
-Postgres holds companies, people, products, orders, tickets, comments, forms, roles, payment settings, Zendesk settings, and the audit log. `DATABASE_URL` selects Neon or any Postgres. Without it, the same schema runs on PGLite. Migrations in `migrations/` apply on startup.
+On Vercel, auth, the portal, shop orders, and uploaded product photos all live in Neon. The app reads `DATABASE_URL`, and also the Vercel Postgres names `POSTGRES_URL` and `POSTGRES_PRISMA_URL`. Schema updates during deploy use `DATABASE_URL_UNPOOLED` or `POSTGRES_URL_NON_POOLING` when those are set, so the Neon pooler is not asked to run migrations. `channel_binding` is ignored because the Postgres driver does not support it. Product photos are stored in the database, not on the server disk, so a new deploy does not drop them.
 
 ## User-facing shop
 
@@ -116,7 +116,9 @@ flowchart TD
   order --> desk
 ```
 
-The cart stays in `localStorage` until checkout. Checkout creates an order on the Web store company, status `pending`, payment method invoice. Staff can change the status, link a Zendesk ticket, and record another payment method from the admin.
+The cart stays in `localStorage` until checkout. Checkout follows the same three steps as a typical Shopify checkout: contact, shipping address and method, then payment. Standard shipping is free over $500, otherwise $15. Express is $25. A shopper can create an account during checkout.
+
+The account page is `/store/<slug>/account`. It is separate from staff sign-in. From there a customer sees their profile, each order, and the shipment: not shipped, shipped, out for delivery, or delivered, plus the tracking number when the desk adds one.
 
 If the catalog is turned off in Settings, the shop stays up and shows that the catalog is hidden.
 
