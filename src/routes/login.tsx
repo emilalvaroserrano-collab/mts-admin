@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient, authEnabled, GROK_PROVIDERS, signIn } from "@/lib/auth/client";
+import { authClient, authEnabled, authReturnUrl, GROK_PROVIDERS, signIn } from "@/lib/auth/client";
 import { getSignInOptions } from "@/lib/auth/options";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Boot, Button, Field, Input } from "@/components/ui";
@@ -51,7 +51,7 @@ function LoginPage() {
     setError("");
     setBusy(true);
     try {
-      await signIn(providerId, { callbackURL: "/" });
+      await signIn(providerId, { callbackURL: authReturnUrl(), errorCallbackURL: authReturnUrl() });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not sign in.");
       setBusy(false);

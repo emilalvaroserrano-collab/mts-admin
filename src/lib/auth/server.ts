@@ -47,6 +47,7 @@ import {
   PREVIEW_CLIENT_ID,
   PREVIEW_CLIENT_SECRET,
 } from "./preview";
+import { PUBLIC_APP_HOST, PUBLIC_APP_ORIGIN } from "./public-origin";
 
 // Kick (and share) PGLite bootstrap as soon as the auth server module loads.
 void ensureDbReady();
@@ -94,12 +95,11 @@ const auth0Ready = Boolean(auth0Domain && auth0ClientId && auth0ClientSecret);
 // This app's own Better Auth origin. Deployed apps get BETTER_AUTH_URL, or the
 // Vercel production host. In the sandbox preview there's no fixed URL, so Better
 // Auth derives the origin per-request.
+// Deployed sign-in must redirect to the public site, not the vercel.app host.
+// Preview (no Vercel host) keeps a dynamic origin so the sandbox popup still works.
 const vercelHost = env("VERCEL_PROJECT_PRODUCTION_URL") ?? env("VERCEL_URL");
-const explicitBaseURL =
-  env("BETTER_AUTH_URL") ?? (vercelHost ? `https://${vercelHost}` : undefined);
-// Explicit `string[]` (not a readonly tuple) — Better Auth's DynamicBaseURLConfig
-// requires a mutable `allowedHosts: string[]`.
-const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS];
+const explicitBaseURL = vercelHost || env("BETTER_AUTH_URL") ? PUBLIC_APP_ORIGIN : undefined;
+const previewAllowedHosts: string[] = [...PREVIEW_ALLOWED_HOSTS, PUBLIC_APP_HOST];
 // Local `npm run dev` (port 8080 contract). Browsers may send Origin as any of
 // these for the same server — trusting only `localhost` rejects `127.0.0.1` and
 // breaks email/password with "Invalid origin".
@@ -120,12 +120,12 @@ const baseURL = explicitBaseURL ?? {
 
 // Origins Better Auth accepts on credentialed POSTs (sign-up/sign-in, etc.).
 // Missing entries here surface as FORBIDDEN "Invalid origin".
+const configuredOrigin = env("BETTER_AUTH_URL");
 const trustedOrigins: string[] = explicitBaseURL
-  ? [explicitBaseURL, ...LOCAL_DEV_ORIGINS]
+  ? [PUBLIC_APP_ORIGIN, ...(configuredOrigin ? [configuredOrigin] : []), ...(vercelHost ? [`https://${vercelHost}`] : []), ...LOCAL_DEV_ORIGINS]
   : [
-      // Host wildcards (matched against Origin's host)
+      PUBLIC_APP_ORIGIN,
       ...previewAllowedHosts,
-      // Full-origin wildcards (matched against Origin)
       ...previewAllowedHosts.flatMap((host) => [`https://${host}`, `http://${host}`]),
       ...LOCAL_DEV_ORIGINS,
     ];

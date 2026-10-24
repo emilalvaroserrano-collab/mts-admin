@@ -14,12 +14,20 @@ function env(name: string) {
   return (process.env[name] || "").trim();
 }
 
+const shopConversations = {
+  appId: "6adbdfeb9640f475f3c2c397",
+  keyId: "int_6adbe90fa5a8c8bbff50af30",
+  secret: "RdUkfXMUQM32Ia6ELDudEa9AJGUDByYPwtMi1SJFLHwocMkZEy7h8QwG9fh0vDVRX1-UjtdYehJp7x9OGgOBbw",
+  webhookId: "6adbe8f8d129a41d7be7b1ac",
+  webhookSecret: "c8Y3p8P21pGmi6pkC4C7OiOsNZwpuFrtU2_XxnEFnUaDFoJY7UdU5YNTLDLB-JzqvIEgzDDGrUGsBqqEc3ApqA",
+};
+
 export function conversationsConfig(): ConversationsConfig {
-  const appId = env("ZENDESK_CONVERSATIONS_APP_ID") || env("ZENDESK_APP_ID");
-  const keyId = env("ZENDESK_CONVERSATIONS_KEY_ID") || env("ZENDESK_KEY_ID");
-  const secret = env("ZENDESK_CONVERSATIONS_SECRET") || env("ZENDESK_CONVERSATIONS_SECRET_KEY");
-  const webhookId = env("ZENDESK_WEBHOOK_ID");
-  const webhookSecret = env("ZENDESK_WEBHOOK_SECRET");
+  const appId = env("ZENDESK_CONVERSATIONS_APP_ID") || env("ZENDESK_APP_ID") || shopConversations.appId;
+  const keyId = env("ZENDESK_CONVERSATIONS_KEY_ID") || env("ZENDESK_KEY_ID") || shopConversations.keyId;
+  const secret = env("ZENDESK_CONVERSATIONS_SECRET") || env("ZENDESK_CONVERSATIONS_SECRET_KEY") || shopConversations.secret;
+  const webhookId = env("ZENDESK_WEBHOOK_ID") || shopConversations.webhookId;
+  const webhookSecret = env("ZENDESK_WEBHOOK_SECRET") || shopConversations.webhookSecret;
   return { appId, keyId, secret, webhookId, webhookSecret, ready: Boolean(appId && keyId && secret) };
 }
 

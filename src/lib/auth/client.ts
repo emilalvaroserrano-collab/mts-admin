@@ -2,6 +2,7 @@ import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { runPreSignInSignOut, runSignOut } from "../../../scripts/sign-out-plan.mjs";
 import { GROK_PROVIDERS } from "./providers";
+import { PUBLIC_APP_HOST, PUBLIC_LOGIN_URL } from "./public-origin";
 
 /**
  * Better Auth client for this React SPA (browser-side).
@@ -73,10 +74,17 @@ function setBearerToken(token: string | null): void {
  * popup there and a normal redirect everywhere else.
  */
 function inLivePreview(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.location.hostname.endsWith(".grok-sandbox.com")
-  );
+  return typeof window !== "undefined" && window.location.hostname.endsWith(".grok-sandbox.com");
+}
+
+function useAuthPopup(): boolean {
+  return inLivePreview();
+}
+
+/** Where Google and Microsoft should return the browser after sign-in. */
+export function authReturnUrl() {
+  if (typeof window !== "undefined" && window.location.hostname === PUBLIC_APP_HOST) return PUBLIC_LOGIN_URL;
+  return "/login";
 }
 
 /** Message the popup posts back to the opener once sign-in completes. */
@@ -106,7 +114,7 @@ export async function signIn(
   // Open the popup SYNCHRONOUSLY on the user gesture — before any await
   // (including signOut). Awaiting first drops user-gesture privilege in some
   // browsers when the opener is a cross-origin live-preview iframe.
-  const popup = inLivePreview() ? openSignInPopup(providerId) : null;
+  const popup = useAuthPopup() ? openSignInPopup(providerId) : null;
 
   // Clear any prior session so switching providers actually switches identity.
   // Bounded because the popup is already open — a request that never settles
@@ -114,16 +122,15 @@ export async function signIn(
   // end a deployed session, so cutting it short at the preview's 1.5s would
   // start OAuth with the old session still live.
   await runPreSignInSignOut({
-    livePreview: inLivePreview(),
+    livePreview: useAuthPopup(),
     hasBearer: Boolean(getBearerToken()),
     requestSignOut: () => authClient.signOut(),
     clearToken: () => setBearerToken(null),
   });
 
-  if (inLivePreview()) {
+  if (useAuthPopup()) {
     if (!popup) throw new Error("Pop-up blocked — allow pop-ups for sign-in");
     const token = await waitForPopupToken(popup);
-    if (!token) throw new Error("Sign-in was cancelled or failed");
     setBearerToken(token);
     // Refresh the client session store with the bearer attached (onRequest).
     // Avoid a full iframe reload when we're already on the destination — that
@@ -173,29 +180,28 @@ function openSignInPopup(providerId: string): Window | null {
  * Wait for the popup's completion page to postMessage the session bearer (or
  * for the user to dismiss the popup).
  */
-function waitForPopupToken(popup: Window): Promise<string | null> {
-  return new Promise((resolve) => {
+function waitForPopupToken(popup: Window): Promise<string> {
+  return new Promise((resolve, reject) => {
     const origin = window.location.origin;
     let settled = false;
     let closeTimer: number | undefined;
-    const settle = (token: string | null) => {
+    const finish = (token: string | null, error?: string) => {
       if (settled) return;
       settled = true;
       cleanup();
-      resolve(token);
+      if (token) resolve(token);
+      else reject(new Error(error || "Sign-in was cancelled or failed"));
     };
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== origin) return;
       const data = event.data as PopupMessage | undefined;
       if (!data || data.source !== "grok-auth-popup") return;
-      settle(data.token ?? null);
+      finish(data.token, data.error);
     };
-    // Fallback when the user dismisses the popup. Grace period lets the
-    // completion page's postMessage win over a racing `popup.closed`.
     const pollTimer = window.setInterval(() => {
       if (!popup.closed) return;
       window.clearInterval(pollTimer);
-      closeTimer = window.setTimeout(() => settle(null), 400);
+      closeTimer = window.setTimeout(() => finish(null), 400);
     }, 300);
     function cleanup() {
       window.clearInterval(pollTimer);

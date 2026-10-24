@@ -76,7 +76,7 @@ function IntegrationPage() {
       <PageHeader
         eyebrow="Connection"
         title="Zendesk"
-        description="The shop account uses OAuth client credentials. Messaging still uses the Conversations API key."
+        description="shop.zendesk.com is connected with the Conversations API. Ticket import uses OAuth client credentials when that client id and secret are set."
       />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Panel>

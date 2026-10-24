@@ -418,7 +418,7 @@ function envZendesk(): ZSettings {
   const clientId = (process.env.ZENDESK_OAUTH_CLIENT_ID || "").trim();
   const clientSecret = (process.env.ZENDESK_OAUTH_CLIENT_SECRET || "").trim();
   const tokenUrl = process.env.ZENDESK_OAUTH_TOKEN_URL || "";
-  const subdomain = cleanSubdomain(process.env.ZENDESK_SUBDOMAIN || process.env.ZENDESK_HOST || tokenUrl || (clientId ? "shop" : ""));
+  const subdomain = cleanSubdomain(process.env.ZENDESK_SUBDOMAIN || process.env.ZENDESK_HOST || tokenUrl || "shop");
   const email = (process.env.ZENDESK_EMAIL || process.env.ZENDESK_AGENT_EMAIL || "").trim();
   const apiToken = (process.env.ZENDESK_API_TOKEN || process.env.ZENDESK_TOKEN || process.env.ZENDESK_API_KEY || "").trim();
   const oauth = Boolean(subdomain && clientId && clientSecret);
@@ -2107,15 +2107,22 @@ export const getIntegration = createServerFn({ method: "GET" })
       [actor.organizationId],
     );
     let lastStatus = s(row, "last_status");
-    if ((live.fromEnv || conversations.ready) && (!lastStatus || lastStatus === "not_connected" || lastStatus === "saved")) lastStatus = "ready";
+    let lastError = s(row, "last_error");
+    const supportReady = oauthReady(live) || Boolean(live.email && live.apiToken);
+    if (!supportReady && conversations.ready) {
+      if (!lastStatus || lastStatus === "not_connected" || lastStatus === "saved" || lastStatus === "error") lastStatus = "connected";
+      if (lastError.includes("OAUTH_CLIENT") || lastError.includes("not connected")) lastError = "";
+    } else if ((live.fromEnv || conversations.ready) && (!lastStatus || lastStatus === "not_connected" || lastStatus === "saved")) {
+      lastStatus = "ready";
+    }
     return {
-      subdomain: live.subdomain,
+      subdomain: live.subdomain || "shop",
       email: live.email,
       tokenSet: Boolean(live.apiToken),
       fromEnv: live.fromEnv,
       lastSyncAt: s(row, "last_sync_at") || null,
       lastStatus,
-      lastError: s(row, "last_error"),
+      lastError,
       conversationsReady: conversations.ready,
       conversationsAppId: conversations.appId,
       webhookReady: Boolean(conversations.webhookSecret),
@@ -2211,6 +2218,19 @@ export const syncZendesk = createServerFn({ method: "POST" })
     const actor = await loadActor(sql, context.userId);
     assertWrite(actor);
     const settings = await readZendesk(sql);
+    const supportReady = oauthReady(settings) || Boolean(settings.subdomain && settings.email && settings.apiToken);
+    if (!supportReady) {
+      try {
+        const result = await testConversations();
+        await rememberZendesk(sql, "connected", "", true);
+        await audit(sql, actor, "Tested Zendesk", "conversations", result.name);
+        return { imported: 0 };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Connection failed.";
+        await rememberZendesk(sql, "error", message, false);
+        throw new Error(message);
+      }
+    }
     try {
       const imported = await importFromZendesk(sql, actor, settings);
       zendeskSyncAt = Date.now();

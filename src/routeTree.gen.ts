@@ -20,6 +20,7 @@ import { Route as AppProductsRouteImport } from './routes/_app/products'
 import { Route as AppRolesRouteImport } from './routes/_app/roles'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
+import { Route as AuthPopupRouteImport } from './routes/auth/popup'
 import { Route as AppOrdersIndexRouteImport } from './routes/_app/orders/index'
 import { Route as AppOrdersOrderIdRouteImport } from './routes/_app/orders/$orderId'
 import { Route as AppOrganizationsIndexRouteImport } from './routes/_app/organizations/index'
@@ -86,6 +87,11 @@ const AppUsersRoute = AppUsersRouteImport.update({
   id: '/users',
   path: '/users',
   getParentRoute: () => AppRoute,
+} as any)
+const AuthPopupRoute = AuthPopupRouteImport.update({
+  id: '/auth/popup',
+  path: '/auth/popup',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AppOrdersIndexRoute = AppOrdersIndexRouteImport.update({
   id: '/orders/',
@@ -159,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/roles': typeof AppRolesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
+  '/auth/popup': typeof AuthPopupRoute
   '/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
@@ -182,6 +189,7 @@ export interface FileRoutesByTo {
   '/roles': typeof AppRolesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
+  '/auth/popup': typeof AuthPopupRoute
   '/': typeof AppIndexRoute
   '/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
@@ -208,6 +216,7 @@ export interface FileRoutesById {
   '/_app/roles': typeof AppRolesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/users': typeof AppUsersRoute
+  '/auth/popup': typeof AuthPopupRoute
   '/_app/': typeof AppIndexRoute
   '/_app/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/_app/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/roles'
     | '/settings'
     | '/users'
+    | '/auth/popup'
     | '/orders/$orderId'
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
@@ -258,6 +268,7 @@ export interface FileRouteTypes {
     | '/roles'
     | '/settings'
     | '/users'
+    | '/auth/popup'
     | '/'
     | '/orders/$orderId'
     | '/organizations/$orgId'
@@ -283,6 +294,7 @@ export interface FileRouteTypes {
     | '/_app/roles'
     | '/_app/settings'
     | '/_app/users'
+    | '/auth/popup'
     | '/_app/'
     | '/_app/orders/$orderId'
     | '/_app/organizations/$orgId'
@@ -302,6 +314,7 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  AuthPopupRoute: typeof AuthPopupRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiZendeskWebhookRoute: typeof ApiZendeskWebhookRoute
   StoreSlugSkuRoute: typeof StoreSlugSkuRoute
@@ -388,6 +401,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/users'
       preLoaderRoute: typeof AppUsersRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/auth/popup': {
+      id: '/auth/popup'
+      path: '/auth/popup'
+      fullPath: '/auth/popup'
+      preLoaderRoute: typeof AuthPopupRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/orders/': {
       id: '/_app/orders/'
@@ -516,6 +536,7 @@ const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  AuthPopupRoute: AuthPopupRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiZendeskWebhookRoute: ApiZendeskWebhookRoute,
   StoreSlugSkuRoute: StoreSlugSkuRoute,
