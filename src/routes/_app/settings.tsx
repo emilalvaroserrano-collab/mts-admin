@@ -2,28 +2,45 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getSettings, saveSettings, saveStaff } from "@/lib/portal/api";
+import { getSettings, saveResend, saveSettings, saveStaff, sendTestEmail, testResend } from "@/lib/portal/api";
 import type { PortalSettings, Role, Staff } from "@/lib/portal/types";
 import { ago } from "@/lib/portal/format";
+import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Button, ErrorNote, Field, Input, Loading, PageHeader, Panel, Select, Toggle, errorText } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/settings")({
   component: SettingsPage,
 });
 
-const ROLES: Role[] = ["owner", "admin", "agent", "viewer"];
+const ROLE_LABEL: Record<Role, string> = {
+  owner: "Super Admin",
+  admin: "Admin",
+  agent: "Agent",
+  viewer: "Viewer",
+};
 
 function SettingsPage() {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["settings"], queryFn: () => getSettings() });
   const [settings, setSettings] = useState<PortalSettings | null>(null);
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [fromEmail, setFromEmail] = useState("noreply@managetechservice.com");
+  const [apiKey, setApiKey] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const { user } = useCurrentUserState();
 
   useEffect(() => {
     if (!query.data) return;
     setSettings(query.data.settings);
     setStaff(query.data.staff);
+    setFromEmail(query.data.mail.fromEmail || "noreply@managetechservice.com");
+    setApiKey("");
   }, [query.data]);
+
+  useEffect(() => {
+    const email = user?.primaryEmail;
+    if (email) setTestTo((current) => current || email);
+  }, [user]);
 
   const save = useMutation({
     mutationFn: (next: PortalSettings) => saveSettings({ data: next }),
@@ -31,6 +48,34 @@ function SettingsPage() {
       toast.success("Portal settings saved");
       client.invalidateQueries({ queryKey: ["settings"] });
       client.invalidateQueries({ queryKey: ["shell"] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+
+  const mailSave = useMutation({
+    mutationFn: () => saveResend({ data: { fromEmail, apiKey } }),
+    onSuccess: () => {
+      toast.success("Resend saved");
+      setApiKey("");
+      client.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+
+  const mailTest = useMutation({
+    mutationFn: () => testResend(),
+    onSuccess: (result) => {
+      toast.success(result.message);
+      client.invalidateQueries({ queryKey: ["settings"] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+
+  const mailSend = useMutation({
+    mutationFn: () => sendTestEmail({ data: { to: testTo } }),
+    onSuccess: () => {
+      toast.success(`Test email sent to ${testTo}`);
+      client.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
@@ -65,7 +110,7 @@ function SettingsPage() {
       <PageHeader
         eyebrow="Desk"
         title="Settings"
-        description="Branding, who on staff can see which companies, and the record of changes."
+        description="Branding, Resend email, who on staff can see which companies, and the record of changes."
       />
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <Panel>
@@ -128,8 +173,48 @@ function SettingsPage() {
         </Panel>
       </div>
       <Panel className="mt-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">Resend</h2>
+          <span className="text-xs font-medium text-muted">
+            {query.data.mail.keySet ? "API key saved" : "No API key yet"}
+            {query.data.mail.status === "connected" ? " · Connected" : ""}
+            {query.data.mail.status === "error" ? " · Needs attention" : ""}
+          </span>
+        </div>
+        <p className="mt-1 text-sm text-muted">Order and account mail is sent from the noreply address. Leave the key blank to keep the one already saved.</p>
+        {query.data.mail.error ? <p className="mt-2 text-xs text-muted">{query.data.mail.error}</p> : null}
+        <form
+          className="mt-4 grid gap-3 sm:grid-cols-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            mailSave.mutate();
+          }}
+        >
+          <Field label="From address">
+            <Input type="email" value={fromEmail} onChange={(event) => setFromEmail(event.target.value)} required />
+          </Field>
+          <Field label="Resend API key" hint={query.data.mail.keySet ? "A key is already saved." : "Paste the key from Resend."}>
+            <Input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" placeholder={query.data.mail.keySet ? "••••••••" : "re_..."} />
+          </Field>
+          <Field label="Send a test to">
+            <Input type="email" value={testTo} onChange={(event) => setTestTo(event.target.value)} placeholder="you@company.com" />
+          </Field>
+          <div className="flex flex-wrap gap-2 sm:col-span-2">
+            <Button type="submit" disabled={mailSave.isPending}>
+              {mailSave.isPending ? "Saving" : "Save Resend"}
+            </Button>
+            <Button type="button" variant="secondary" disabled={mailTest.isPending} onClick={() => mailTest.mutate()}>
+              {mailTest.isPending ? "Testing" : "Test connection"}
+            </Button>
+            <Button type="button" variant="secondary" disabled={mailSend.isPending || !testTo.includes("@")} onClick={() => mailSend.mutate()}>
+              {mailSend.isPending ? "Sending" : "Send test email"}
+            </Button>
+          </div>
+        </form>
+      </Panel>
+      <Panel className="mt-4">
         <h2 className="text-sm font-semibold">Staff</h2>
-        <p className="mt-1 text-sm text-muted">A company limit hides every other organization. Leave it open for the whole desk.</p>
+        <p className="mt-1 text-sm text-muted">A company limit hides every other organization. Leave it open for the whole desk. Super Admin is the only role that can delete an order.</p>
         <ul className="mt-4 grid gap-4">
           {staff.map((member) => (
             <li key={member.userId} className="grid gap-3 border-t border-line pt-4 first:border-t-0 first:pt-0">
@@ -140,9 +225,9 @@ function SettingsPage() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Role">
                   <Select value={member.role} onChange={(event) => patchStaff(member.userId, { role: event.target.value as Role })}>
-                    {ROLES.map((role) => (
+                    {(Object.keys(ROLE_LABEL) as Role[]).map((role) => (
                       <option key={role} value={role}>
-                        {role}
+                        {ROLE_LABEL[role]}
                       </option>
                     ))}
                   </Select>

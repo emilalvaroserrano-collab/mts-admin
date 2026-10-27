@@ -28,6 +28,8 @@ import { Route as AppOrganizationsOrgIdRouteImport } from './routes/_app/organiz
 import { Route as AppTicketsIndexRouteImport } from './routes/_app/tickets/index'
 import { Route as AppTicketsTicketIdRouteImport } from './routes/_app/tickets/$ticketId'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiJobsRunRouteImport } from './routes/api/jobs/run'
+import { Route as ApiPaymentsAlternativeRouteImport } from './routes/api/payments/alternative'
 import { Route as ApiZendeskWebhookRouteImport } from './routes/api/zendesk/webhook'
 import { Route as StoreSlugIndexRouteImport } from './routes/store/$slug/index'
 import { Route as StoreSlugSkuRouteImport } from './routes/store/$slug/$sku'
@@ -128,6 +130,16 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiJobsRunRoute = ApiJobsRunRouteImport.update({
+  id: '/api/jobs/run',
+  path: '/api/jobs/run',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPaymentsAlternativeRoute = ApiPaymentsAlternativeRouteImport.update({
+  id: '/api/payments/alternative',
+  path: '/api/payments/alternative',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiZendeskWebhookRoute = ApiZendeskWebhookRouteImport.update({
   id: '/api/zendesk/webhook',
   path: '/api/zendesk/webhook',
@@ -170,6 +182,8 @@ export interface FileRoutesByFullPath {
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/jobs/run': typeof ApiJobsRunRoute
+  '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
   '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
@@ -195,6 +209,8 @@ export interface FileRoutesByTo {
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/jobs/run': typeof ApiJobsRunRoute
+  '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
   '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
@@ -222,6 +238,8 @@ export interface FileRoutesById {
   '/_app/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/_app/tickets/$ticketId': typeof AppTicketsTicketIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/jobs/run': typeof ApiJobsRunRoute
+  '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
   '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
@@ -249,6 +267,8 @@ export interface FileRouteTypes {
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
     | '/api/auth/$'
+    | '/api/jobs/run'
+    | '/api/payments/alternative'
     | '/api/zendesk/webhook'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
@@ -274,6 +294,8 @@ export interface FileRouteTypes {
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
     | '/api/auth/$'
+    | '/api/jobs/run'
+    | '/api/payments/alternative'
     | '/api/zendesk/webhook'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
@@ -300,6 +322,8 @@ export interface FileRouteTypes {
     | '/_app/organizations/$orgId'
     | '/_app/tickets/$ticketId'
     | '/api/auth/$'
+    | '/api/jobs/run'
+    | '/api/payments/alternative'
     | '/api/zendesk/webhook'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
@@ -316,6 +340,8 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   AuthPopupRoute: typeof AuthPopupRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiJobsRunRoute: typeof ApiJobsRunRoute
+  ApiPaymentsAlternativeRoute: typeof ApiPaymentsAlternativeRoute
   ApiZendeskWebhookRoute: typeof ApiZendeskWebhookRoute
   StoreSlugSkuRoute: typeof StoreSlugSkuRoute
   StoreSlugAccountRoute: typeof StoreSlugAccountRoute
@@ -458,6 +484,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/jobs/run': {
+      id: '/api/jobs/run'
+      path: '/api/jobs/run'
+      fullPath: '/api/jobs/run'
+      preLoaderRoute: typeof ApiJobsRunRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/payments/alternative': {
+      id: '/api/payments/alternative'
+      path: '/api/payments/alternative'
+      fullPath: '/api/payments/alternative'
+      preLoaderRoute: typeof ApiPaymentsAlternativeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/zendesk/webhook': {
       id: '/api/zendesk/webhook'
       path: '/api/zendesk/webhook'
@@ -538,6 +578,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   AuthPopupRoute: AuthPopupRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiJobsRunRoute: ApiJobsRunRoute,
+  ApiPaymentsAlternativeRoute: ApiPaymentsAlternativeRoute,
   ApiZendeskWebhookRoute: ApiZendeskWebhookRoute,
   StoreSlugSkuRoute: StoreSlugSkuRoute,
   StoreSlugAccountRoute: StoreSlugAccountRoute,

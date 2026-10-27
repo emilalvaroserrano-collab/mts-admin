@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { StoreFrame, useStore } from "@/components/storefront";
+import { OrderBarcode } from "@/components/order-barcode";
 import { getShopAccount, saveShopProfile, shopLogin, shopLogout, shopRegister } from "@/lib/portal/api";
 import { day, money, paymentLabel } from "@/lib/portal/format";
 import { setShopToken, useShopToken } from "@/lib/portal/shop-session";
@@ -202,6 +203,10 @@ function OrderDetail({ order, slug }: { order: ShopOrder; slug: string }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">{order.number}</h3>
+          <div className="mt-3 max-w-sm rounded-lg bg-white px-2 py-3">
+            <OrderBarcode value={order.number} height={64} />
+            <p className="mt-1 text-center font-mono text-xs tracking-[0.16em]">{order.number}</p>
+          </div>
           <p className="text-xs text-muted">{paymentLabel(order.paymentMethod)} · {order.shippingMethod === "express" ? "Express" : "Standard"}</p>
         </div>
         <p className="text-sm font-semibold tabular-nums">{money(order.totalCents)}</p>

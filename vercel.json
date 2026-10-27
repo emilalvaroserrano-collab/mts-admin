@@ -1,5 +1,6 @@
 {
   "framework": null,
   "buildCommand": "npm run build",
-  "installCommand": "npm install --omit=dev --no-audit --no-fund"
+  "installCommand": "npm install --omit=dev --no-audit --no-fund",
+  "crons": [{ "path": "/api/jobs/run", "schedule": "0 * * * *" }]
 }

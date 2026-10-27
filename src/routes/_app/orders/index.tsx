@@ -3,12 +3,24 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
 import { createOrder, getPayments, getPeople, listOrders, listProducts } from "@/lib/portal/api";
-import { money, paymentLabel } from "@/lib/portal/format";
-import { Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, StatusBadge, Textarea, errorText } from "@/components/ui";
+import { money, paymentLabel, shopifyDelivery, shopifyFulfillment, shopifyPayment, day, orderCustomer, orderEmail } from "@/lib/portal/format";
+import type { Order } from "@/lib/portal/types";
+import { Badge, Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, Textarea, errorText } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/orders/")({
   component: OrdersPage,
 });
+
+function matchesView(order: Order, view: string) {
+  const payment = shopifyPayment(order);
+  const fulfillment = shopifyFulfillment(order);
+  if (view === "open") return order.status !== "cancelled";
+  if (view === "unfulfilled") return fulfillment.label === "Unfulfilled";
+  if (view === "unpaid") return payment.label === "Unpaid" || payment.label === "Payment pending" || payment.label === "Authorized";
+  if (view === "fulfilled") return fulfillment.label === "Fulfilled";
+  if (view === "canceled") return order.status === "cancelled";
+  return true;
+}
 
 function OrdersPage() {
   const query = useQuery({ queryKey: ["orders"], queryFn: () => listOrders() });
@@ -23,6 +35,7 @@ function OrdersPage() {
   const [notes, setNotes] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [lines, setLines] = useState<{ productId: number; name: string; quantity: number }[]>([]);
+  const [view, setView] = useState("all");
   const navigate = useNavigate();
   const client = useQueryClient();
   const save = useMutation({
@@ -44,6 +57,7 @@ function OrdersPage() {
       setNotes("");
       client.invalidateQueries({ queryKey: ["orders"] });
       client.invalidateQueries({ queryKey: ["dashboard"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
       if (result.paymentUrl && (paymentMethod || payments.data?.methods[0]) === "alternative") {
         window.open(result.paymentUrl, "_blank", "noopener,noreferrer");
       }
@@ -60,40 +74,77 @@ function OrdersPage() {
       <PageHeader
         eyebrow="Catalog"
         title="Orders"
-        description="What was requested, who approved it, and the Zendesk ticket that tracks it."
+        description="Payment, fulfillment, and delivery follow the current state of each order."
         actions={<Button onClick={() => setOpen(true)}>New order</Button>}
       />
+      <div className="mb-4 flex gap-2 overflow-x-auto">
+        {[
+          ["all", "All"],
+          ["open", "Open"],
+          ["unfulfilled", "Unfulfilled"],
+          ["unpaid", "Unpaid"],
+          ["fulfilled", "Fulfilled"],
+          ["canceled", "Canceled"],
+        ].map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setView(id)}
+            className={view === id ? "h-8 shrink-0 rounded-full bg-ink px-3 text-[13px] font-semibold text-white" : "h-8 shrink-0 rounded-full border border-line px-3 text-[13px] text-muted"}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       {query.isPending ? <Loading /> : null}
       {query.isError ? <ErrorNote message={query.error.message} /> : null}
       {query.data ? (
         <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
-          <table className="w-full min-w-[44rem] text-left text-sm">
+          <table className="w-full min-w-[64rem] text-left text-sm">
             <thead className="text-xs text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Order</th>
-                <th className="px-4 py-3 font-medium">Company</th>
+                <th className="px-4 py-3 font-medium">Date</th>
+                <th className="px-4 py-3 font-medium">Customer</th>
                 <th className="px-4 py-3 font-medium">Total</th>
                 <th className="px-4 py-3 font-medium">Payment</th>
-                <th className="px-4 py-3 font-medium">Ticket</th>
-                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Fulfillment</th>
+                <th className="px-4 py-3 font-medium">Delivery</th>
+                <th className="px-4 py-3 font-medium">Items</th>
               </tr>
             </thead>
             <tbody>
-              {query.data.map((order) => (
-                <tr key={order.id} className="border-t border-line">
-                  <td className="px-4 py-3">
-                    <Link to="/orders/$orderId" params={{ orderId: String(order.id) }} className="font-medium hover:underline">
-                      {order.number}
-                    </Link>
-                    <p className="text-xs text-muted">{order.customerName || "Desk order"}</p>
-                  </td>
-                  <td className="px-4 py-3">{order.organizationName}</td>
-                  <td className="px-4 py-3 font-mono tabular-nums">{money(order.totalCents)}</td>
-                  <td className="px-4 py-3">{order.paymentMethod ? paymentLabel(order.paymentMethod) : "—"}</td>
-                  <td className="px-4 py-3">{order.zendeskTicketId ? `#${order.zendeskTicketId}` : order.ticketId ? `P-${order.ticketId}` : "—"}</td>
-                  <td className="px-4 py-3"><StatusBadge value={order.status} /></td>
-                </tr>
-              ))}
+              {query.data.filter((order) => matchesView(order, view)).map((order) => {
+                const payment = shopifyPayment(order);
+                const fulfillment = shopifyFulfillment(order);
+                const delivery = shopifyDelivery(order);
+                return (
+                  <tr key={order.id} className="border-t border-line">
+                    <td className="px-4 py-3">
+                      <Link to="/orders/$orderId" params={{ orderId: String(order.id) }} className="font-medium hover:underline">
+                        {order.number}
+                      </Link>
+                      <p className="text-xs text-muted">{order.organizationName}</p>
+                    </td>
+                    <td className="px-4 py-3 text-muted">{day(order.createdAt)}</td>
+                    <td className="px-4 py-3">
+                      <p>{orderCustomer(order)}</p>
+                      <p className="text-xs text-muted">{orderEmail(order) || "—"}</p>
+                    </td>
+                    <td className="px-4 py-3 font-mono tabular-nums">{money(order.totalCents + order.shippingCents)}</td>
+                    <td className="px-4 py-3">
+                      <Badge tone={payment.tone}>{payment.label}</Badge>
+                      <p className="mt-1 text-xs text-muted">{order.paymentMethod ? paymentLabel(order.paymentMethod) : "—"}</p>
+                    </td>
+                    <td className="px-4 py-3"><Badge tone={fulfillment.tone}>{fulfillment.label}</Badge></td>
+                    <td className="px-4 py-3">
+                      {delivery ? <Badge tone={delivery.tone}>{delivery.label}</Badge> : <span className="text-muted">—</span>}
+                      {order.trackingNumber ? <p className="mt-1 font-mono text-xs text-muted">{order.trackingNumber}</p> : null}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">{order.itemCount}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

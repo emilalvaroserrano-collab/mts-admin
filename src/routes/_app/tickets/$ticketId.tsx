@@ -29,6 +29,7 @@ function TicketPage() {
       client.invalidateQueries({ queryKey: ["ticket", id] });
       client.invalidateQueries({ queryKey: ["tickets"] });
       client.invalidateQueries({ queryKey: ["dashboard"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });

@@ -1,12 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { StoreFrame, useStore } from "@/components/storefront";
+import { Check, Lock } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { StoreFrame, SummaryToggle, useStore } from "@/components/storefront";
 import { getShopAccount, getShopCheckout, placeStorefrontOrder } from "@/lib/portal/api";
 import { money, paymentLabel } from "@/lib/portal/format";
 import { clearCart, useCart } from "@/lib/portal/store-cart";
 import { setShopToken, useShopToken } from "@/lib/portal/shop-session";
-import { Button, Field, Input, Textarea } from "@/components/ui";
 
 export const Route = createFileRoute("/store/$slug/checkout")({
   component: CheckoutPage,
@@ -75,6 +75,7 @@ function Checkout() {
   const subtotal = detailed.reduce((sum, line) => sum + line.quantity * (line.product?.priceCents ?? 0), 0);
   const shippingCents = shippingMethod === "express" ? 2500 : subtotal >= 50000 ? 0 : 1500;
   const total = subtotal + shippingCents;
+  const stepIndex = STEPS.indexOf(step);
 
   const place = useMutation({
     mutationFn: () =>
@@ -107,9 +108,9 @@ function Checkout() {
   if (!store) return null;
   if (detailed.length === 0 && !place.data) {
     return (
-      <main className="mx-auto max-w-lg px-4 py-16 text-sm">
-        <p>Your cart is empty.</p>
-        <Link to="/store/$slug" params={{ slug: store.slug }} className="mt-4 inline-block underline">
+      <main className="mx-auto max-w-lg px-4 py-16 text-center">
+        <p className="text-lg font-semibold">Your cart is empty</p>
+        <Link to="/store/$slug" params={{ slug: store.slug }} className="shop-press mt-6 inline-flex h-12 items-center rounded-full bg-ink px-6 text-sm font-semibold text-white">
           Return to the shop
         </Link>
       </main>
@@ -117,22 +118,23 @@ function Checkout() {
   }
   if (place.data) {
     return (
-      <main className="mx-auto max-w-lg px-4 py-16">
-        <p className="text-xs uppercase tracking-[0.16em] text-muted">Thank you</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{place.data.number}</h1>
-        <p className="mt-3 text-sm leading-6 text-muted">
-          The order is confirmed. Shipment starts as not yet shipped. You can follow it from your account.
+      <main className="shop-rise mx-auto max-w-lg px-4 py-12 sm:py-16">
+        <p className="inline-flex items-center gap-2 text-sm font-semibold text-accent"><Check className="size-4" /> Order confirmed</p>
+        <h1 className="mt-3 text-4xl font-semibold tracking-tight">{place.data.number}</h1>
+        <p className="mt-3 text-base leading-7 text-muted">
+          A confirmation is ready in your account. Shipment starts as not yet shipped, and the status updates as it moves.
         </p>
+        <p className="mt-4 text-sm">Total <span className="font-semibold tabular-nums">{money(place.data.totalCents)}</span></p>
         {place.data.paymentUrl ? (
-          <a href={place.data.paymentUrl} target="_blank" rel="noreferrer" className="mt-6 inline-flex h-11 items-center rounded-full bg-ink px-5 text-sm font-semibold text-white">
-            Pay now
+          <a href={place.data.paymentUrl} target="_blank" rel="noreferrer" className="shop-press mt-6 inline-flex h-12 items-center rounded-full bg-ink px-6 text-sm font-semibold text-white">
+            Continue to payment
           </a>
         ) : null}
-        <div className="mt-4 flex flex-wrap gap-3">
-          <Link to="/store/$slug/account" params={{ slug: store.slug }} className="inline-flex h-11 items-center rounded-full border border-line px-5 text-sm font-semibold">
-            View order
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <Link to="/store/$slug/account" params={{ slug: store.slug }} className="shop-press inline-flex h-12 items-center justify-center rounded-full border border-line px-5 text-sm font-semibold">
+            Track this order
           </Link>
-          <Link to="/store/$slug" params={{ slug: store.slug }} className="inline-flex h-11 items-center text-sm text-muted">
+          <Link to="/store/$slug" params={{ slug: store.slug }} className="inline-flex h-12 items-center justify-center text-sm text-muted">
             Keep shopping
           </Link>
         </div>
@@ -140,161 +142,230 @@ function Checkout() {
     );
   }
 
-  return (
-    <main className="mx-auto grid max-w-5xl gap-8 px-4 py-8 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <div>
-        <nav className="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted">
-          <Link to="/store/$slug" params={{ slug }}>Cart</Link>
-          {STEPS.map((item) => (
-            <span key={item} className="flex items-center gap-2">
-              <span aria-hidden="true">/</span>
-              <button type="button" className={step === item ? "font-semibold text-ink" : ""} onClick={() => setStep(item)}>
-                {item === "information" ? "Information" : item === "shipping" ? "Shipping" : "Payment"}
-              </button>
+  const summary = (
+    <div>
+      <ul className="space-y-3">
+        {detailed.map((line) => (
+          <li key={line.sku} className="flex items-center gap-3">
+            <span className="relative">
+              {line.product?.imageUrl ? <img src={line.product.imageUrl} alt="" className="size-16 rounded-xl border border-line bg-white object-cover" /> : <span className="block size-16 rounded-xl bg-white" />}
+              <span className="absolute -right-2 -top-2 grid min-w-5 place-items-center rounded-full bg-ink px-1 text-[10px] font-semibold leading-5 text-white">{line.quantity}</span>
             </span>
-          ))}
-        </nav>
-        {step === "information" ? (
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setError("");
-              setStep("shipping");
-            }}
-          >
-            <h1 className="text-xl font-semibold">Contact</h1>
-            {account.data ? <p className="text-sm text-muted">Signed in as {account.data.customer.email}</p> : null}
-            <Field label="Email">
-              <Input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" />
-            </Field>
-            <Field label="Full name">
-              <Input value={name} onChange={(event) => setName(event.target.value)} required autoComplete="name" />
-            </Field>
-            <Field label="Phone">
-              <Input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" />
-            </Field>
-            <Field label="Company">
-              <Input value={company} onChange={(event) => setCompany(event.target.value)} autoComplete="organization" />
-            </Field>
-            {account.data ? null : (
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={saveAccount} onChange={(event) => setSaveAccount(event.target.checked)} />
-                Create an account to track this order
-              </label>
-            )}
-            {saveAccount ? (
-              <Field label="Password" hint="At least 8 characters.">
-                <Input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete="new-password" />
-              </Field>
-            ) : null}
-            <Button type="submit">Continue to shipping</Button>
-          </form>
-        ) : null}
-        {step === "shipping" ? (
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setStep("payment");
-            }}
-          >
-            <h1 className="text-xl font-semibold">Shipping address</h1>
-            <Field label="Address">
-              <Input value={address} onChange={(event) => setAddress(event.target.value)} required autoComplete="address-line1" />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="City">
-                <Input value={city} onChange={(event) => setCity(event.target.value)} required autoComplete="address-level2" />
-              </Field>
-              <Field label="State">
-                <Input value={region} onChange={(event) => setRegion(event.target.value)} autoComplete="address-level1" />
-              </Field>
+            <span className="min-w-0 flex-1 text-sm font-medium">{line.product?.name}</span>
+            <span className="text-sm tabular-nums">{money(line.quantity * (line.product?.priceCents ?? 0))}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
+        <p className="flex justify-between"><span className="text-muted">Subtotal</span><span className="tabular-nums">{money(subtotal)}</span></p>
+        <p className="flex justify-between"><span className="text-muted">Shipping</span><span className="tabular-nums">{shippingCents === 0 ? "Free" : money(shippingCents)}</span></p>
+      </div>
+      <p className="mt-3 flex items-end justify-between">
+        <span className="text-sm text-muted">Total</span>
+        <span className="text-xl font-semibold tabular-nums">{money(total)}</span>
+      </p>
+    </div>
+  );
+
+  function go(next: Step) {
+    setError("");
+    setStep(next);
+  }
+
+  return (
+    <main className="lg:grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(18rem,26rem)]">
+      <section className="bg-[#f3f6f7] lg:order-2 lg:border-l lg:border-line lg:px-8 lg:py-10">
+        <SummaryToggle total={money(total)}>{summary}</SummaryToggle>
+        <div className="hidden lg:block">{summary}</div>
+      </section>
+      <section className="bg-white px-4 py-6 sm:px-10 lg:order-1 lg:py-10">
+        <div className="mx-auto w-full max-w-xl">
+          <nav className="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted" aria-label="Checkout">
+            <Link to="/store/$slug" params={{ slug }}>Cart</Link>
+            {STEPS.map((item, index) => (
+              <span key={item} className="flex items-center gap-2">
+                <span aria-hidden="true">/</span>
+                <button
+                  type="button"
+                  disabled={index > stepIndex}
+                  className={step === item ? "font-semibold text-ink" : index < stepIndex ? "text-accent" : "cursor-default"}
+                  onClick={() => {
+                    if (index < stepIndex) go(item);
+                  }}
+                >
+                  {item === "information" ? "Information" : item === "shipping" ? "Shipping" : "Payment"}
+                </button>
+              </span>
+            ))}
+          </nav>
+
+          {step !== "information" ? (
+            <div className="mb-4 divide-y divide-line overflow-hidden rounded-2xl border border-line text-sm">
+              <SummaryRow label="Contact" value={email} onChange={() => go("information")} />
+              <SummaryRow label="Ship to" value={[address, city, region, postal, country].filter(Boolean).join(", ")} onChange={() => go("information")} />
+              {step === "payment" ? (
+                <SummaryRow
+                  label="Method"
+                  value={shippingMethod === "express" ? `Express · ${money(2500)}` : `Standard · ${shippingCents === 0 ? "Free" : money(shippingCents)}`}
+                  onChange={() => go("shipping")}
+                />
+              ) : null}
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Postal code">
-                <Input value={postal} onChange={(event) => setPostal(event.target.value)} required autoComplete="postal-code" />
-              </Field>
-              <Field label="Country">
-                <Input value={country} onChange={(event) => setCountry(event.target.value)} required autoComplete="country-name" />
-              </Field>
-            </div>
-            <fieldset className="grid gap-2">
-              <legend className="text-sm font-medium">Shipping method</legend>
-              <label className="flex items-center justify-between rounded-xl border border-line px-3 py-3 text-sm">
-                <span className="flex items-center gap-2">
-                  <input type="radio" name="ship" checked={shippingMethod === "standard"} onChange={() => setShippingMethod("standard")} />
-                  Standard · 5–7 business days
+          ) : null}
+
+          {step === "information" ? (
+            <form
+              className="shop-rise grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                go("shipping");
+              }}
+            >
+              <h1 className="text-lg font-semibold">Contact</h1>
+              {account.data ? <p className="text-sm text-muted">Signed in as {account.data.customer.email}</p> : (
+                <p className="text-sm text-muted">
+                  Already have an account? <Link to="/store/$slug/account" params={{ slug }} className="font-semibold text-accent">Sign in</Link>
+                </p>
+              )}
+              <ShopField label="Email">
+                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required autoComplete="email" className={fieldClass} />
+              </ShopField>
+              <h2 className="pt-2 text-lg font-semibold">Delivery</h2>
+              <ShopField label="Country">
+                <input value={country} onChange={(event) => setCountry(event.target.value)} required autoComplete="country-name" className={fieldClass} />
+              </ShopField>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ShopField label="Full name">
+                  <input value={name} onChange={(event) => setName(event.target.value)} required autoComplete="name" className={fieldClass} />
+                </ShopField>
+                <ShopField label="Company (optional)">
+                  <input value={company} onChange={(event) => setCompany(event.target.value)} autoComplete="organization" className={fieldClass} />
+                </ShopField>
+              </div>
+              <ShopField label="Address">
+                <input value={address} onChange={(event) => setAddress(event.target.value)} required autoComplete="address-line1" className={fieldClass} />
+              </ShopField>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <ShopField label="City">
+                  <input value={city} onChange={(event) => setCity(event.target.value)} required autoComplete="address-level2" className={fieldClass} />
+                </ShopField>
+                <ShopField label="State">
+                  <input value={region} onChange={(event) => setRegion(event.target.value)} autoComplete="address-level1" className={fieldClass} />
+                </ShopField>
+                <ShopField label="Postal code">
+                  <input value={postal} onChange={(event) => setPostal(event.target.value)} required autoComplete="postal-code" className={fieldClass} />
+                </ShopField>
+              </div>
+              <ShopField label="Phone">
+                <input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" className={fieldClass} />
+              </ShopField>
+              {account.data ? null : (
+                <label className="flex min-h-11 items-center gap-3 text-sm">
+                  <input type="checkbox" className="size-5" checked={saveAccount} onChange={(event) => setSaveAccount(event.target.checked)} />
+                  Save this information and create an account
+                </label>
+              )}
+              {saveAccount ? (
+                <ShopField label="Password" hint="At least 8 characters.">
+                  <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} autoComplete="new-password" className={fieldClass} />
+                </ShopField>
+              ) : null}
+              <button type="submit" className="shop-press h-12 rounded-xl bg-ink text-sm font-semibold text-white">Continue to shipping</button>
+            </form>
+          ) : null}
+
+          {step === "shipping" ? (
+            <form className="shop-rise grid gap-3" onSubmit={(event) => { event.preventDefault(); go("payment"); }}>
+              <h1 className="text-lg font-semibold">Shipping method</h1>
+              <label className={choiceClass(shippingMethod === "standard")}>
+                <span className="flex items-center gap-3">
+                  <input type="radio" name="ship" className="size-5" checked={shippingMethod === "standard"} onChange={() => setShippingMethod("standard")} />
+                  <span>
+                    <span className="block font-semibold">Standard</span>
+                    <span className="text-xs text-muted">5–7 business days</span>
+                  </span>
                 </span>
                 <span className="tabular-nums">{subtotal >= 50000 ? "Free" : money(1500)}</span>
               </label>
-              <label className="flex items-center justify-between rounded-xl border border-line px-3 py-3 text-sm">
-                <span className="flex items-center gap-2">
-                  <input type="radio" name="ship" checked={shippingMethod === "express"} onChange={() => setShippingMethod("express")} />
-                  Express · 2 business days
+              <label className={choiceClass(shippingMethod === "express")}>
+                <span className="flex items-center gap-3">
+                  <input type="radio" name="ship" className="size-5" checked={shippingMethod === "express"} onChange={() => setShippingMethod("express")} />
+                  <span>
+                    <span className="block font-semibold">Express</span>
+                    <span className="text-xs text-muted">2 business days</span>
+                  </span>
                 </span>
                 <span className="tabular-nums">{money(2500)}</span>
               </label>
-            </fieldset>
-            <div className="flex flex-wrap gap-3">
-              <Button type="button" variant="secondary" onClick={() => setStep("information")}>Back</Button>
-              <Button type="submit">Continue to payment</Button>
-            </div>
-          </form>
-        ) : null}
-        {step === "payment" ? (
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              setError("");
-              place.mutate();
-            }}
-          >
-            <h1 className="text-xl font-semibold">Payment</h1>
-            <fieldset className="grid gap-2">
+              <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button type="button" className="h-12 text-sm text-accent" onClick={() => go("information")}>Return to information</button>
+                <button type="submit" className="shop-press h-12 rounded-xl bg-ink px-6 text-sm font-semibold text-white sm:min-w-52">Continue to payment</button>
+              </div>
+            </form>
+          ) : null}
+
+          {step === "payment" ? (
+            <form
+              className="shop-rise grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setError("");
+                place.mutate();
+              }}
+            >
+              <h1 className="flex items-center gap-2 text-lg font-semibold"><Lock className="size-4" /> Payment</h1>
+              <p className="text-sm text-muted">All transactions are secure. Billing uses the shipping address.</p>
               {(checkout.data?.methods ?? ["invoice"]).map((method) => (
-                <label key={method} className="flex items-center justify-between rounded-xl border border-line px-3 py-3 text-sm">
-                  <span className="flex items-center gap-2">
-                    <input type="radio" name="pay" checked={paymentMethod === method} onChange={() => setPaymentMethod(method)} />
-                    {paymentLabel(method)}
+                <label key={method} className={choiceClass(paymentMethod === method)}>
+                  <span className="flex items-center gap-3">
+                    <input type="radio" name="pay" className="size-5" checked={paymentMethod === method} onChange={() => setPaymentMethod(method)} />
+                    <span className="font-semibold">{paymentLabel(method)}</span>
                   </span>
                   <span className="text-xs text-muted">
                     {method === "invoice" ? checkout.data?.invoiceTerms : method === "alternative" ? checkout.data?.alternativeEnvironment === "sandbox" ? "Sandbox" : "Hosted checkout" : ""}
                   </span>
                 </label>
               ))}
-            </fieldset>
-            <Field label="Order notes">
-              <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
-            </Field>
-            {error ? <p className="text-sm text-bad">{error}</p> : null}
-            <div className="flex flex-wrap gap-3">
-              <Button type="button" variant="secondary" onClick={() => setStep("shipping")}>Back</Button>
-              <Button type="submit" disabled={place.isPending}>{place.isPending ? "Placing order" : `Pay ${money(total)}`}</Button>
-            </div>
-          </form>
-        ) : null}
-      </div>
-      <aside className="h-fit rounded-2xl bg-[#f6f6f6] p-4">
-        <h2 className="text-sm font-semibold">Order summary</h2>
-        <ul className="mt-3 divide-y divide-line text-sm">
-          {detailed.map((line) => (
-            <li key={line.sku} className="flex justify-between gap-3 py-2">
-              <span>{line.quantity} × {line.product?.name}</span>
-              <span className="tabular-nums">{money(line.quantity * (line.product?.priceCents ?? 0))}</span>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-3 space-y-1 text-sm text-muted">
-          <p className="flex justify-between"><span>Subtotal</span><span className="tabular-nums text-ink">{money(subtotal)}</span></p>
-          <p className="flex justify-between"><span>Shipping</span><span className="tabular-nums text-ink">{shippingCents === 0 ? "Free" : money(shippingCents)}</span></p>
+              <ShopField label="Order notes (optional)">
+                <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${fieldClass} h-24 py-3`} />
+              </ShopField>
+              {error ? <p className="text-sm text-bad">{error}</p> : null}
+              <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <button type="button" className="h-12 text-sm text-accent" onClick={() => go("shipping")}>Return to shipping</button>
+                <button type="submit" disabled={place.isPending} className="shop-press h-12 rounded-xl bg-ink px-6 text-sm font-semibold text-white disabled:opacity-50 sm:min-w-52">
+                  {place.isPending ? "Placing order" : `Pay now · ${money(total)}`}
+                </button>
+              </div>
+            </form>
+          ) : null}
         </div>
-        <p className="mt-3 flex justify-between text-sm font-semibold">
-          <span>Total</span>
-          <span className="tabular-nums">{money(total)}</span>
-        </p>
-      </aside>
+      </section>
     </main>
+  );
+}
+
+const fieldClass = "h-12 w-full rounded-xl border border-line bg-white px-3 text-base text-ink outline-none focus:border-accent";
+
+function choiceClass(selected: boolean) {
+  return `flex min-h-16 cursor-pointer items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm transition ${selected ? "border-ink bg-accent-soft" : "border-line bg-white"}`;
+}
+
+function ShopField({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <label className="grid gap-1.5 text-sm">
+      <span className="font-medium">{label}</span>
+      {children}
+      {hint ? <span className="text-xs text-muted">{hint}</span> : null}
+    </label>
+  );
+}
+
+function SummaryRow({ label, value, onChange }: { label: string; value: string; onChange: () => void }) {
+  return (
+    <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-start gap-2 bg-[#f7fafb] px-3 py-3">
+      <span className="text-muted">{label}</span>
+      <span className="truncate">{value || "—"}</span>
+      <button type="button" className="text-accent" onClick={onChange}>Change</button>
+    </div>
   );
 }

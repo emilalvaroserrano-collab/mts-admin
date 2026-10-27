@@ -16,6 +16,11 @@ export type ShellInfo = {
   tagline: string;
   zendeskConnected: boolean;
   zendeskStatus: string;
+  orderCount: number;
+  ticketCount: number;
+  peopleCount: number;
+  catalogCount: number;
+  companyCount: number;
 };
 
 export type Ticket = {
@@ -77,6 +82,14 @@ export type Customer = {
   active: boolean;
   zendeskUserId: string;
   createdAt: string;
+  source: "company" | "shop" | "portal";
+  staffUserId: string;
+  phone: string;
+  orderCount: number;
+  lastOrderId: number | null;
+  lastOrderStatus: string;
+  ticketId: number | null;
+  zendeskTicketId: string;
 };
 
 export type UserRequest = {
@@ -99,6 +112,7 @@ export type Product = {
   specs: string;
   priceCents: number;
   imageUrl: string;
+  stock: number;
   available: boolean;
   visibility: string;
 };
@@ -110,6 +124,16 @@ export type OrderItem = {
   sku: string;
   quantity: number;
   unitPriceCents: number;
+};
+
+export type OrderEvent = {
+  id: number;
+  kind: string;
+  fromValue: string;
+  toValue: string;
+  actorName: string;
+  detail: string;
+  createdAt: string;
 };
 
 export type Order = {
@@ -146,7 +170,9 @@ export type Order = {
   shipmentStatus: string;
   trackingNumber: string;
   trackingCarrier: string;
+  itemCount: number;
   items: OrderItem[];
+  events: OrderEvent[];
 };
 
 export type TicketForm = {
@@ -185,6 +211,8 @@ export type Integration = {
   webhookId: string;
   oauthReady: boolean;
   oauthClientId: string;
+  oauthFromEnv: boolean;
+  oauthSecretSet: boolean;
 };
 
 export type PortalSettings = {

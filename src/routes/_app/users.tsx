@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { getPeople, reviewRequest, saveCustomer } from "@/lib/portal/api";
+import { getPeople, reviewRequest, saveCustomer, syncPortalUsers } from "@/lib/portal/api";
 import type { Customer, Policy } from "@/lib/portal/types";
-import { ago } from "@/lib/portal/format";
+import { ago, day } from "@/lib/portal/format";
 import { Badge, Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Panel, Select, StatusBadge, Toggle, errorText } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/users")({
@@ -25,12 +25,22 @@ const blank = (): Customer => ({
   active: true,
   zendeskUserId: "",
   createdAt: "",
+  source: "company",
+  staffUserId: "",
+  phone: "",
+  orderCount: 0,
+  lastOrderId: null,
+  lastOrderStatus: "",
+  ticketId: null,
+  zendeskTicketId: "",
 });
 
 function PeoplePage() {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["people"], queryFn: () => getPeople() });
   const [draft, setDraft] = useState<Customer | null>(null);
+  const [view, setView] = useState("all");
+  const [search, setSearch] = useState("");
   const save = useMutation({
     mutationFn: (person: Customer) =>
       saveCustomer({
@@ -48,19 +58,32 @@ function PeoplePage() {
           zendeskUserId: person.zendeskUserId,
         },
       }),
-    onSuccess: () => {
-      toast.success("Person saved");
+    onSuccess: (result) => {
+      toast.success(result.zendeskId ? `Person saved. Zendesk ticket ${result.zendeskId}` : "Person saved");
+      if (result.warning) toast.message(result.warning);
       setDraft(null);
       client.invalidateQueries({ queryKey: ["people"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
       client.invalidateQueries({ queryKey: ["dashboard"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
   const review = useMutation({
     mutationFn: (input: { id: number; decision: "approved" | "denied" }) => reviewRequest({ data: input }),
-    onSuccess: () => {
-      toast.success("Request reviewed");
+    onSuccess: (result) => {
+      toast.success(result.zendeskId ? `Request reviewed. Zendesk ticket ${result.zendeskId}` : "Request reviewed");
+      if (result.warning) toast.message(result.warning);
       client.invalidateQueries({ queryKey: ["people"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+  const syncUsers = useMutation({
+    mutationFn: () => syncPortalUsers(),
+    onSuccess: (result) => {
+      toast.success(result.failed ? `Synced ${result.synced}. ${result.failed} failed.` : `Synced ${result.synced} users to Zendesk`);
+      client.invalidateQueries({ queryKey: ["people"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
@@ -68,6 +91,18 @@ function PeoplePage() {
   if (query.isPending) return <Loading />;
   if (query.isError) return <ErrorNote message={query.error.message} />;
   const pending = query.data.requests.filter((request) => request.status === "pending");
+  const needle = search.trim().toLowerCase();
+  const people = query.data.people.filter((person) => {
+    if (view === "active" && !person.active) return false;
+    if (view === "inactive" && person.active) return false;
+    if (view === "order" && !person.canOrder) return false;
+    if (view === "approve" && !person.canApproveOrders) return false;
+    if (view === "shop" && person.source !== "shop") return false;
+    if (view === "portal" && person.source !== "portal") return false;
+    if (view === "company" && person.source !== "company") return false;
+    if (!needle) return true;
+    return [person.name, person.email, person.organizationName, person.title, person.phone].join(" ").toLowerCase().includes(needle);
+  });
 
   function applyPolicy(level: string) {
     const policy = query.data?.policies.find((item) => item.id === level);
@@ -84,74 +119,159 @@ function PeoplePage() {
     );
   }
 
+  function addShopPerson(person: Customer) {
+    setDraft({
+      ...blank(),
+      name: person.name,
+      email: person.email,
+      title: "Online shop",
+      phone: person.phone,
+      organizationId: query.data?.orgs[0]?.id ?? null,
+    });
+  }
+
   return (
     <div>
       <PageHeader
         eyebrow="Directory"
         title="People"
-        description="Customer users, Zendesk requesters, and requests for new accounts."
-        actions={<Button onClick={() => setDraft({ ...blank(), organizationId: query.data.orgs[0]?.id ?? null })}>Add person</Button>}
+        description="Company users and online shop customers, with their orders and Zendesk ticket."
+        actions={
+          <>
+            <Button variant="secondary" disabled={syncUsers.isPending} onClick={() => syncUsers.mutate()}>
+              {syncUsers.isPending ? "Syncing" : "Sync to Zendesk"}
+            </Button>
+            <Button onClick={() => setDraft({ ...blank(), organizationId: query.data.orgs[0]?.id ?? null })}>Add person</Button>
+          </>
+        }
       />
-      {pending.length > 0 ? (
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email, or company" aria-label="Search people" className="sm:max-w-xs" />
+        <div className="flex gap-2 overflow-x-auto">
+          {[
+            ["all", "All"],
+            ["company", "Company"],
+            ["shop", "Shop"],
+            ["portal", "Portal"],
+            ["active", "Active"],
+            ["inactive", "Inactive"],
+            ["order", "Can order"],
+            ["approve", "Approvers"],
+            ["requests", "Requests"],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setView(id)}
+              className={view === id ? "h-8 shrink-0 rounded-full bg-ink px-3 text-[13px] font-semibold text-white" : "h-8 shrink-0 rounded-full border border-line px-3 text-[13px] text-muted"}
+            >
+              {label}
+              {id === "requests" && pending.length > 0 ? ` ${pending.length}` : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+      {view === "requests" || pending.length > 0 ? (
         <Panel className="mb-4">
-          <h2 className="text-sm font-semibold">Requests waiting</h2>
+          <h2 className="text-sm font-semibold">{view === "requests" ? "Account requests" : "Requests waiting"}</h2>
           <ul className="mt-3 divide-y divide-line">
-            {pending.map((request) => (
+            {(view === "requests" ? query.data.requests : pending).map((request) => (
               <li key={request.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-medium">{request.requestedName}</p>
                   <p className="text-xs text-muted">
-                    {request.requestedEmail} · {request.organizationName} · asked by {request.requestedBy || "unknown"} · {ago(request.createdAt)}
+                    {request.requestedEmail} · {request.organizationName || "No company"} · asked by {request.requestedBy || "unknown"} · {ago(request.createdAt)}
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => review.mutate({ id: request.id, decision: "approved" })}>Approve</Button>
-                  <Button size="sm" variant="secondary" onClick={() => review.mutate({ id: request.id, decision: "denied" })}>Deny</Button>
-                </div>
+                {request.status === "pending" ? (
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => review.mutate({ id: request.id, decision: "approved" })}>Approve</Button>
+                    <Button size="sm" variant="secondary" onClick={() => review.mutate({ id: request.id, decision: "denied" })}>Deny</Button>
+                  </div>
+                ) : (
+                  <StatusBadge value={request.status} />
+                )}
               </li>
             ))}
+            {(view === "requests" ? query.data.requests : pending).length === 0 ? <li className="py-3 text-sm text-muted">No requests.</li> : null}
           </ul>
         </Panel>
       ) : null}
-      <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
-        <table className="w-full min-w-[48rem] text-left text-sm">
-          <thead className="text-xs text-muted">
-            <tr>
-              <th className="px-4 py-3 font-medium">Person</th>
-              <th className="px-4 py-3 font-medium">Company</th>
-              <th className="px-4 py-3 font-medium">Access</th>
-              <th className="px-4 py-3 font-medium">Zendesk</th>
-              <th className="px-4 py-3 font-medium" />
-            </tr>
-          </thead>
-          <tbody>
-            {query.data.people.map((person) => (
-              <tr key={person.id} className="border-t border-line">
-                <td className="px-4 py-3">
-                  <p className="font-medium">{person.name}</p>
-                  <p className="text-xs text-muted">{person.title || person.email}</p>
-                </td>
-                <td className="px-4 py-3">{person.organizationName || "—"}</td>
-                <td className="px-4 py-3">
-                  <div className="flex flex-wrap gap-1">
-                    <Badge tone={person.permissionLevel === "authorized" ? "pine" : "neutral"}>{person.permissionLevel}</Badge>
-                    <StatusBadge value={person.active ? "active" : "inactive"} />
-                  </div>
-                </td>
-                <td className="px-4 py-3 font-mono text-xs">{person.zendeskUserId || "—"}</td>
-                <td className="px-4 py-3 text-right">
-                  <Button size="sm" variant="secondary" onClick={() => setDraft(person)}>Edit</Button>
-                </td>
+      {view !== "requests" ? (
+        <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+          <table className="w-full min-w-[56rem] text-left text-sm">
+            <thead className="text-xs text-muted">
+              <tr>
+                <th className="px-4 py-3 font-medium">Person</th>
+                <th className="px-4 py-3 font-medium">Company</th>
+                <th className="px-4 py-3 font-medium">Access</th>
+                <th className="px-4 py-3 font-medium">Orders</th>
+                <th className="px-4 py-3 font-medium">Ticket</th>
+                <th className="px-4 py-3 font-medium">Joined</th>
+                <th className="px-4 py-3 font-medium" />
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {people.map((person) => (
+                <tr key={`${person.source}-${person.staffUserId || person.id}`} className="border-t border-line">
+                  <td className="px-4 py-3">
+                    <p className="font-medium">{person.name || person.email}</p>
+                    <p className="text-xs text-muted">{person.email}</p>
+                    {person.phone ? <p className="text-xs text-muted">{person.phone}</p> : null}
+                  </td>
+                  <td className="px-4 py-3">
+                    <p>{person.source === "shop" ? "Online shop" : person.source === "portal" ? person.organizationName || "Portal" : person.organizationName || "No company"}</p>
+                    <p className="text-xs text-muted">{person.source === "company" ? person.title || "—" : person.title}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1">
+                      {person.source === "shop" ? <Badge tone="info">Shop</Badge> : person.source === "portal" ? <Badge tone="pine">Portal</Badge> : <Badge tone={person.permissionLevel === "authorized" ? "pine" : "neutral"}>{person.permissionLevel}</Badge>}
+                      <StatusBadge value={person.active ? "active" : "inactive"} />
+                      {person.canOrder ? <Badge tone="good">Orders</Badge> : null}
+                      {person.canApproveOrders ? <Badge tone="warn">Approves</Badge> : null}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {person.lastOrderId ? (
+                      <Link to="/orders/$orderId" params={{ orderId: String(person.lastOrderId) }} className="font-medium hover:underline">
+                        MT-{1000 + person.lastOrderId}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">—</span>
+                    )}
+                    <p className="text-xs text-muted">{person.orderCount} {person.orderCount === 1 ? "order" : "orders"}{person.lastOrderStatus ? ` · ${person.lastOrderStatus}` : ""}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    {person.ticketId ? (
+                      <Link to="/tickets/$ticketId" params={{ ticketId: String(person.ticketId) }} className="text-accent hover:underline">
+                        {person.zendeskTicketId ? `#${person.zendeskTicketId}` : `P-${person.ticketId}`}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">{person.zendeskUserId ? `User ${person.zendeskUserId}` : "Not synced"}</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted">{person.createdAt ? day(person.createdAt) : "—"}</td>
+                  <td className="px-4 py-3 text-right">
+                    {person.source === "shop" ? (
+                      <Button size="sm" variant="secondary" onClick={() => addShopPerson(person)}>Add to company</Button>
+                    ) : person.source === "portal" ? (
+                      <span className="text-xs text-muted">Staff account</span>
+                    ) : (
+                      <Button size="sm" variant="secondary" onClick={() => setDraft(person)}>Edit</Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {people.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No one matches that view.</p> : null}
+        </div>
+      ) : null}
       <Modal
         open={Boolean(draft)}
         onOpenChange={(open) => { if (!open) setDraft(null); }}
         title={draft?.id ? "Edit person" : "Add person"}
-        description="Permissions are enforced when an order is placed."
+        description="Saving a new person opens their Zendesk ticket. Permissions are checked when they order."
       >
         {draft ? (
           <form

@@ -1,4 +1,5 @@
 import type { Order } from "./types";
+import { code128Bars } from "./barcode";
 import { day, money } from "./format";
 
 function ascii(value: string) {
@@ -7,6 +8,27 @@ function ascii(value: string) {
 
 function esc(value: string) {
   return ascii(value).replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function drawBarcode(push: (cmd: string) => void, value: string, x: number, y: number, module: number, height: number) {
+  const bars = code128Bars(value);
+  const quiet = 10;
+  let cursor = x + quiet * module;
+  let index = 0;
+  push("0 0 0 rg");
+  while (index < bars.length) {
+    if (!bars[index]) {
+      cursor += module;
+      index += 1;
+      continue;
+    }
+    let run = 1;
+    while (bars[index + run]) run += 1;
+    const width = Number((run * module).toFixed(2));
+    push(`${cursor.toFixed(2)} ${y} ${width} ${height} re f`);
+    cursor += run * module;
+    index += run;
+  }
 }
 
 function buildOrderPdf(order: Order): Uint8Array {
@@ -44,6 +66,14 @@ function buildOrderPdf(order: Order): Uint8Array {
       : "No linked ticket";
   push(`1 0 0 1 48 636 Tm`);
   push(`(${esc(ticket)}) Tj`);
+  push("ET");
+
+  drawBarcode(push, order.number, 360, 656, 1.15, 52);
+  push("BT");
+  push("/F1 8 Tf");
+  push("0.102 0.098 0.086 rg");
+  push("1 0 0 1 372 646 Tm");
+  push(`(${esc(order.number)}) Tj`);
   push("ET");
 
   push("0.78 0.76 0.72 RG");

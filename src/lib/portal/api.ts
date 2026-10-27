@@ -12,6 +12,23 @@ import {
   refreshAlternativePayment,
 } from "./alternative";
 import { conversationsConfig, testConversations } from "./zendesk-conversations";
+import { lookupAwb } from "./ups";
+import {
+  applyPaymentStatus,
+  dueJobs,
+  enqueueJob,
+  finishJob,
+  orderEvents,
+  readAlternativeEvent,
+  rebalanceHold,
+  recordEvent,
+  resendStoredEmail,
+  reserveOrder,
+  resolveMail,
+  sendOrderEmail,
+  setInventory,
+  verifyAlternativeSignature,
+} from "./commerce";
 import type {
   Actor,
   Audit,
@@ -21,6 +38,7 @@ import type {
   Named,
   Order,
   OrderDraft,
+  OrderEvent,
   OrderItem,
   Org,
   OrgDetail,
@@ -176,6 +194,14 @@ function mapCustomer(row: Row): Customer {
     active: b(row, "active"),
     zendeskUserId: s(row, "zendesk_user_id"),
     createdAt: s(row, "created_at"),
+    source: s(row, "source") === "shop" ? "shop" : s(row, "source") === "portal" ? "portal" : "company",
+    staffUserId: s(row, "staff_user_id"),
+    phone: s(row, "phone"),
+    orderCount: n(row, "order_count"),
+    lastOrderId: nid(row, "last_order_id"),
+    lastOrderStatus: s(row, "last_order_status"),
+    ticketId: nid(row, "ticket_id"),
+    zendeskTicketId: s(row, "zendesk_ticket_id"),
   };
 }
 
@@ -215,7 +241,9 @@ function mapOrder(row: Row, items: OrderItem[] = []): Order {
     shipmentStatus: s(row, "shipment_status") || "unfulfilled",
     trackingNumber: s(row, "tracking_number"),
     trackingCarrier: s(row, "tracking_carrier"),
+    itemCount: n(row, "item_count") || items.reduce((sum, item) => sum + item.quantity, 0),
     items,
+    events: [],
   };
 }
 
@@ -240,6 +268,7 @@ function mapProduct(row: Row): Product {
     specs: s(row, "specs"),
     priceCents: n(row, "price_cents"),
     imageUrl: s(row, "image_url"),
+    stock: n(row, "stock"),
     available: b(row, "available"),
     visibility: s(row, "visibility") || "all",
   };
@@ -316,7 +345,11 @@ const ORDER_SELECT = `
     coalesce((
       select sum(oi.quantity * oi.unit_price_cents)::int
       from order_items oi where oi.order_id = o.id
-    ), 0) as total_cents
+    ), 0) as total_cents,
+    coalesce((
+      select sum(oi.quantity)::int
+      from order_items oi where oi.order_id = o.id
+    ), 0) as item_count
   from orders o
   join organizations org on org.id = o.organization_id
   left join customer_users cu on cu.id = o.customer_user_id
@@ -328,13 +361,15 @@ async function loadActor(sql: Sql, userId: string): Promise<Actor> {
   const user = users[0];
   const name = user ? s(user, "name") || "Staff" : "Staff";
   const email = user ? s(user, "email") : "";
-  await sql`
+  const createdRows = await sql<Row>`
     insert into portal_staff (user_id, name, email, role)
     values (${userId}, ${name}, ${email}, 'agent')
     on conflict (user_id) do update set
       name = excluded.name,
       email = case when excluded.email <> '' then excluded.email else portal_staff.email end
+    returning (xmax = 0) as inserted
   `;
+  const staffIsNew = Boolean(createdRows[0] && (createdRows[0].inserted === true || createdRows[0].inserted === "t"));
   await sql`
     update portal_staff set role = 'owner'
     where user_id = ${userId}
@@ -354,6 +389,32 @@ async function loadActor(sql: Sql, userId: string): Promise<Actor> {
   if (!row) throw new Error("Could not open a staff profile.");
   const actor = mapActor(row);
   if (!actor.active) throw new Error("This account is deactivated.");
+  if (email && !s(row, "zendesk_user_id")) {
+    try {
+      const zendeskUserId = await upsertZendeskUser(sql, {
+        name,
+        email,
+        kind: "staff",
+      });
+      if (zendeskUserId) await sql`update portal_staff set zendesk_user_id = ${zendeskUserId} where user_id = ${userId}`;
+    } catch {
+      /* sign-in still opens if Zendesk is down */
+    }
+  }
+  if (staffIsNew && email) {
+    try {
+      await openWelcomeTicket(sql, {
+        name,
+        email,
+        organizationId: actor.organizationId,
+        source: "Staff sign-in",
+        detail: "First time this person opened the admin.",
+        actorName: name,
+      });
+    } catch {
+      /* a welcome ticket must not block sign-in */
+    }
+  }
   return actor;
 }
 
@@ -435,16 +496,18 @@ function envZendesk(): ZSettings {
 
 async function readZendesk(sql: Sql): Promise<ZSettings> {
   const envz = envZendesk();
-  const rows = await sql<Row>`select subdomain, email, api_token from integration_settings where id = 1`;
+  const rows = await sql<Row>`select subdomain, email, api_token, oauth_client_id, oauth_client_secret, oauth_scopes from integration_settings where id = 1`;
   const row = rows[0];
+  const storedId = row ? s(row, "oauth_client_id") : "";
+  const storedSecret = row ? s(row, "oauth_client_secret") : "";
   return {
-    subdomain: envz.subdomain || (row ? cleanSubdomain(s(row, "subdomain")) : ""),
+    subdomain: envz.subdomain || (row ? cleanSubdomain(s(row, "subdomain")) : "") || "shop",
     email: envz.email || (row ? s(row, "email") : ""),
     apiToken: envz.apiToken || (row ? s(row, "api_token") : ""),
     fromEnv: envz.fromEnv,
-    oauthClientId: envz.oauthClientId,
-    oauthClientSecret: envz.oauthClientSecret,
-    oauthScopes: envz.oauthScopes,
+    oauthClientId: envz.oauthClientId || storedId,
+    oauthClientSecret: envz.oauthClientSecret || storedSecret,
+    oauthScopes: envz.oauthClientId ? envz.oauthScopes : row && s(row, "oauth_scopes") ? s(row, "oauth_scopes") : envz.oauthScopes,
   };
 }
 
@@ -460,28 +523,50 @@ type OauthCache = { key: string; token: string; expiresAt: number };
 const oauthCache = globalThis as typeof globalThis & { __zendeskOauth?: OauthCache };
 
 async function zendeskAccessToken(settings: ZSettings) {
-  const key = `${settings.subdomain}:${settings.oauthClientId}`;
+  const key = `${settings.subdomain}:${settings.oauthClientId}:${settings.oauthScopes}`;
   const cached = oauthCache.__zendeskOauth;
   if (cached && cached.key === key && cached.expiresAt > Date.now() + 15_000) return cached.token;
-  const response = await fetch(`https://${settings.subdomain}.zendesk.com/oauth/tokens`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({
-      grant_type: "client_credentials",
-      client_id: settings.oauthClientId,
-      client_secret: settings.oauthClientSecret,
-      scope: settings.oauthScopes,
-    }),
-  });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`Zendesk OAuth returned ${response.status}. ${text.replaceAll(settings.oauthClientSecret, "").slice(0, 180)}`);
+  const scopes = [settings.oauthScopes || "read write", "users:read users:write tickets:read tickets:write organizations:read"];
+  let lastDetail = "Zendesk rejected the OAuth client.";
+  for (const scope of scopes) {
+    for (const asForm of [false, true]) {
+      const body = asForm
+        ? new URLSearchParams({
+            grant_type: "client_credentials",
+            client_id: settings.oauthClientId,
+            client_secret: settings.oauthClientSecret,
+            scope,
+          })
+        : JSON.stringify({
+            grant_type: "client_credentials",
+            client_id: settings.oauthClientId,
+            client_secret: settings.oauthClientSecret,
+            scope,
+          });
+      const response = await fetch(`https://${settings.subdomain}.zendesk.com/oauth/tokens`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": asForm ? "application/x-www-form-urlencoded" : "application/json",
+        },
+        body,
+      });
+      const text = await response.text();
+      if (response.ok) {
+        const parsed = JSON.parse(text) as { access_token?: string; expires_in?: number };
+        if (!parsed.access_token) throw new Error("Zendesk OAuth did not return an access token.");
+        const ttl = typeof parsed.expires_in === "number" && parsed.expires_in > 60 ? parsed.expires_in * 1000 : 30 * 60 * 1000;
+        oauthCache.__zendeskOauth = { key, token: parsed.access_token, expiresAt: Date.now() + ttl };
+        return parsed.access_token;
+      }
+      lastDetail = text.replaceAll(settings.oauthClientSecret, "").slice(0, 180);
+      if (response.status !== 400 && response.status !== 401 && response.status !== 415) {
+        throw new Error(`Zendesk OAuth returned ${response.status}. ${lastDetail}`);
+      }
+    }
+    if (!/invalid_scope|scope/i.test(lastDetail)) break;
   }
-  const body = JSON.parse(text) as { access_token?: string; expires_in?: number };
-  if (!body.access_token) throw new Error("Zendesk OAuth did not return an access token.");
-  const ttl = typeof body.expires_in === "number" && body.expires_in > 60 ? body.expires_in * 1000 : 50 * 60 * 1000;
-  oauthCache.__zendeskOauth = { key, token: body.access_token, expiresAt: Date.now() + ttl };
-  return body.access_token;
+  throw new Error(`Zendesk OAuth returned 400. ${lastDetail}`);
 }
 
 async function zendeskAuthorization(settings: ZSettings) {
@@ -547,6 +632,90 @@ async function rememberZendesk(sql: Sql, status: string, error: string, synced: 
     set last_status = ${status}, last_error = ${error}
     where id = 1
   `;
+}
+
+function supportConnected(settings: ZSettings) {
+  return oauthReady(settings) || Boolean(settings.subdomain && settings.email && settings.apiToken);
+}
+
+async function upsertZendeskUser(sql: Sql, input: { name: string; email: string; kind: "staff" | "customer" | "shop" }) {
+  const email = input.email.trim().toLowerCase();
+  if (!email) return "";
+  const settings = await readZendesk(sql);
+  if (!supportConnected(settings)) return "";
+  const tag = input.kind === "staff" ? "portal_staff" : input.kind === "shop" ? "shop_customer" : "portal_customer";
+  const created = await zendesk(settings, "/users/create_or_update.json", {
+    method: "POST",
+    body: JSON.stringify({
+      user: {
+        name: input.name || email,
+        email,
+        role: "end-user",
+        skip_verify_email: true,
+        tags: [tag, "portal"],
+      },
+    }),
+  });
+  const remote = obj(created.user);
+  return remote.id != null ? String(remote.id) : "";
+}
+
+async function openWelcomeTicket(
+  sql: Sql,
+  input: { name: string; email: string; organizationId: number | null; source: string; detail: string; actorName: string },
+) {
+  const subject = `New user: ${input.name || input.email}`;
+  const body = [`Name: ${input.name}`, `Email: ${input.email}`, `Source: ${input.source}`, input.detail]
+    .filter(Boolean)
+    .join("\n");
+  const inserted = await sql<Row>`
+    insert into tickets (
+      subject, status, priority, category, organization_id, requester_name, requester_email, tags, view_label
+    ) values (
+      ${subject}, 'new', 'normal', 'Account', ${input.organizationId},
+      ${input.name}, ${input.email}, 'new_user,portal', ''
+    )
+    returning id
+  `;
+  const ticketId = n(inserted[0], "id");
+  await sql`
+    insert into ticket_comments (ticket_id, author_name, body, public_note)
+    values (${ticketId}, ${input.actorName || "Portal"}, ${body}, true)
+  `;
+  let zendeskId = "";
+  let warning = "";
+  const settings = await readZendesk(sql);
+  if (!supportConnected(settings)) {
+    await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
+    return { ticketId, zendeskId, warning: "The portal ticket is open. Connect Zendesk to copy it to the desk." };
+  }
+  try {
+    let zendeskOrg = "";
+    if (input.organizationId) {
+      const orgRows = await sql<Row>`select zendesk_org_id from organizations where id = ${input.organizationId}`;
+      zendeskOrg = orgRows[0] ? s(orgRows[0], "zendesk_org_id") : "";
+    }
+    const ticketPayload: Record<string, unknown> = {
+      subject,
+      comment: { body },
+      tags: ["new_user", "portal"],
+      status: "new",
+      requester: { name: input.name || input.email, email: input.email },
+    };
+    if (zendeskOrg && Number.isFinite(Number(zendeskOrg))) ticketPayload.organization_id = Number(zendeskOrg);
+    const created = await zendesk(settings, "/tickets.json", {
+      method: "POST",
+      body: JSON.stringify({ ticket: ticketPayload }),
+    });
+    const remote = obj(created.ticket);
+    zendeskId = remote.id != null ? String(remote.id) : "";
+    if (zendeskId) await sql`update tickets set zendesk_id = ${zendeskId} where id = ${ticketId}`;
+  } catch (error) {
+    warning = error instanceof Error ? error.message : "Zendesk did not accept the new-user ticket.";
+    await rememberZendesk(sql, "error", warning, false);
+    await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
+  }
+  return { ticketId, zendeskId, warning };
 }
 
 function viewFromTags(tags: string[]) {
@@ -676,7 +845,7 @@ async function pullComments(
 
 async function refreshRemoteTicket(sql: Sql, ticket: Ticket) {
   const settings = await readZendesk(sql);
-  if (!settings.apiToken || !ticket.zendeskId) return;
+  if (!supportConnected(settings) || !ticket.zendeskId) return;
   const payload = await zendesk(settings, `/tickets/${encodeURIComponent(ticket.zendeskId)}.json?include=users`);
   const remote = obj(payload.ticket);
   if (typeof remote.subject !== "string") return;
@@ -815,7 +984,7 @@ async function pushTicketComment(
   status: string,
 ) {
   const settings = await readZendesk(sql);
-  if (!settings.apiToken || !ticket.zendeskId) return "";
+  if (!supportConnected(settings) || !ticket.zendeskId) return "";
   try {
     await zendesk(settings, `/tickets/${encodeURIComponent(ticket.zendeskId)}.json`, {
       method: "PUT",
@@ -844,12 +1013,30 @@ export const getShell = createServerFn({ method: "GET" })
     const integration = await sql<Row>`select last_status from integration_settings where id = 1`;
     const setting = settings[0];
     const link = integration[0];
+    const orders = await sql<Row>`
+      select
+        (select count(*)::int from orders where (${actor.organizationId}::int is null or organization_id = ${actor.organizationId})) as orders,
+        (select count(*)::int from tickets where (${actor.organizationId}::int is null or organization_id = ${actor.organizationId})) as tickets,
+        (
+          (select count(*)::int from customer_users where (${actor.organizationId}::int is null or organization_id = ${actor.organizationId}))
+          + (select count(*)::int from shop_customers where ${actor.organizationId}::int is null)
+          + (select count(*)::int from portal_staff where email <> '' and (${actor.organizationId}::int is null or organization_id = ${actor.organizationId}))
+        ) as people,
+        (select count(*)::int from organizations where (${actor.organizationId}::int is null or id = ${actor.organizationId})) as companies,
+        (select count(*)::int from products) as catalog
+    `;
+    const counts = orders[0];
     return {
       actor,
       brandName: setting ? s(setting, "brand_name") : "Manage Tech Service",
       tagline: setting ? s(setting, "tagline") : "",
       zendeskConnected: Boolean(oauthReady(live) || (live.subdomain && live.email && live.apiToken) || conversationsConfig().ready),
       zendeskStatus: link ? s(link, "last_status") : oauthReady(live) || live.apiToken ? "ready" : "not_connected",
+      orderCount: counts ? n(counts, "orders") : 0,
+      ticketCount: counts ? n(counts, "tickets") : 0,
+      peopleCount: counts ? n(counts, "people") : 0,
+      catalogCount: counts ? n(counts, "catalog") : 0,
+      companyCount: counts ? n(counts, "companies") : 0,
     };
   });
 
@@ -1132,7 +1319,7 @@ export const updateTicket = createServerFn({ method: "POST" })
     `;
     const settings = await readZendesk(sql);
     let warning = "";
-    if (settings.apiToken && existing.ticket.zendeskId) {
+    if (supportConnected(settings) && existing.ticket.zendeskId) {
       try {
         const ticketBody: Record<string, unknown> = {};
         if (status !== existing.ticket.status) ticketBody.status = status === "new" ? "open" : status;
@@ -1302,13 +1489,44 @@ export const getPeople = createServerFn({ method: "GET" })
     const sql = await getSql();
     const actor = await loadActor(sql, context.userId);
     const people = await sql.query<Row>(
-      `select cu.*, coalesce(o.name, '') as organization_name
+      `select cu.*, coalesce(o.name, '') as organization_name, 'company' as source,
+        coalesce((select count(*)::int from orders ord where ord.customer_user_id = cu.id), 0) as order_count,
+        (select ord.id from orders ord where ord.customer_user_id = cu.id order by ord.id desc limit 1) as last_order_id,
+        coalesce((select ord.status from orders ord where ord.customer_user_id = cu.id order by ord.id desc limit 1), '') as last_order_status,
+        (select t.id from tickets t where lower(t.requester_email) = lower(cu.email) order by t.id desc limit 1) as ticket_id,
+        coalesce((select t.zendesk_id from tickets t where lower(t.requester_email) = lower(cu.email) and t.zendesk_id is not null order by t.id desc limit 1), '') as zendesk_ticket_id
        from customer_users cu
        left join organizations o on o.id = cu.organization_id
        where ($1::int is null or cu.organization_id = $1)
        order by cu.name`,
       [actor.organizationId],
     );
+    const staff = await sql.query<Row>(
+      `select staff.user_id as staff_user_id, staff.name, staff.email, staff.role as permission_level, staff.organization_id,
+        staff.active, staff.created_at, staff.zendesk_user_id, coalesce(org.name, '') as organization_name, 'portal' as source,
+        coalesce((select count(*)::int from orders ord where lower(ord.ship_email) = lower(staff.email)), 0) as order_count,
+        (select ord.id from orders ord where lower(ord.ship_email) = lower(staff.email) order by ord.id desc limit 1) as last_order_id,
+        coalesce((select ord.status from orders ord where lower(ord.ship_email) = lower(staff.email) order by ord.id desc limit 1), '') as last_order_status,
+        (select t.id from tickets t where lower(t.requester_email) = lower(staff.email) order by t.id desc limit 1) as ticket_id,
+        coalesce((select t.zendesk_id from tickets t where lower(t.requester_email) = lower(staff.email) and t.zendesk_id is not null order by t.id desc limit 1), '') as zendesk_ticket_id
+       from portal_staff staff
+       left join organizations org on org.id = staff.organization_id
+       where staff.email <> '' and ($1::int is null or staff.organization_id = $1)
+       order by staff.name`,
+      [actor.organizationId],
+    );
+    const shop = actor.organizationId
+      ? []
+      : await sql<Row>`
+          select sc.id, sc.name, sc.email, sc.phone, sc.city, sc.created_at, sc.zendesk_user_id, 'shop' as source,
+            coalesce((select count(*)::int from orders ord where ord.shop_customer_id = sc.id), 0) as order_count,
+            (select ord.id from orders ord where ord.shop_customer_id = sc.id order by ord.id desc limit 1) as last_order_id,
+            coalesce((select ord.status from orders ord where ord.shop_customer_id = sc.id order by ord.id desc limit 1), '') as last_order_status,
+            (select t.id from tickets t where lower(t.requester_email) = lower(sc.email) order by t.id desc limit 1) as ticket_id,
+            coalesce((select t.zendesk_id from tickets t where lower(t.requester_email) = lower(sc.email) and t.zendesk_id is not null order by t.id desc limit 1), '') as zendesk_ticket_id
+          from shop_customers sc
+          order by sc.created_at desc
+        `;
     const requests = await sql.query<Row>(
       `select r.*, coalesce(o.name, '') as organization_name
        from user_requests r
@@ -1318,8 +1536,24 @@ export const getPeople = createServerFn({ method: "GET" })
       [actor.organizationId],
     );
     const policies = await sql<Row>`select * from role_policies order by id`;
+    const directory = people.map(mapCustomer);
+    const buyers = shop.map((row) => ({
+      ...mapCustomer({ ...row, active: true, permission_level: "regular", organization_name: s(row, "city") }),
+      title: "Online shop",
+      active: true,
+      source: "shop" as const,
+    }));
+    const accounts = staff.map((row) => ({
+      ...mapCustomer(row),
+      id: 0,
+      title: s(row, "permission_level") === "owner" ? "Super Admin" : s(row, "permission_level") || "Staff",
+      source: "portal" as const,
+      canOrder: false,
+      canRequestUsers: false,
+      canApproveOrders: false,
+    }));
     return {
-      people: people.map(mapCustomer),
+      people: [...accounts, ...directory, ...buyers],
       requests: requests.map(mapRequest),
       orgs: await orgNames(sql, actor),
       policies: policies.map(mapPolicy),
@@ -1354,6 +1588,12 @@ export const saveCustomer = createServerFn({ method: "POST" })
     const actor = await loadActor(sql, context.userId);
     assertWrite(actor);
     assertOrg(actor, data.organizationId);
+    const duplicate = await sql<Row>`
+      select id from customer_users
+      where lower(email) = lower(${data.email}) and id <> ${data.id ?? 0}
+      limit 1
+    `;
+    if (duplicate[0]) throw new Error("That email is already in the directory.");
     if (data.id) {
       const existing = await sql<Row>`select organization_id from customer_users where id = ${data.id}`;
       if (!existing[0]) throw new Error("Person not found.");
@@ -1373,7 +1613,7 @@ export const saveCustomer = createServerFn({ method: "POST" })
         where id = ${data.id}
       `;
       await audit(sql, actor, "Updated person", data.email, data.active ? data.permissionLevel : "Deactivated");
-      return { id: data.id };
+      return { id: data.id, ticketId: 0, zendeskId: "", warning: "" };
     }
     const inserted = await sql<Row>`
       insert into customer_users (
@@ -1386,7 +1626,17 @@ export const saveCustomer = createServerFn({ method: "POST" })
       returning id
     `;
     await audit(sql, actor, "Invited person", data.email, data.permissionLevel);
-    return { id: n(inserted[0], "id") };
+    const ticket = await openWelcomeTicket(sql, {
+      name: data.name,
+      email: data.email,
+      organizationId: data.organizationId,
+      source: "Admin invite",
+      detail: data.title,
+      actorName: actor.name,
+    });
+    const zendeskUserId = await upsertZendeskUser(sql, { name: data.name, email: data.email, kind: "customer" }).catch(() => "");
+    if (zendeskUserId) await sql`update customer_users set zendesk_user_id = ${zendeskUserId} where id = ${n(inserted[0], "id")}`;
+    return { id: n(inserted[0], "id"), ...ticket };
   });
 
 export const reviewRequest = createServerFn({ method: "POST" })
@@ -1408,7 +1658,10 @@ export const reviewRequest = createServerFn({ method: "POST" })
     if (s(request, "status") !== "pending") throw new Error("That request is already reviewed.");
     const organizationId = nid(request, "organization_id");
     assertOrg(actor, organizationId);
+    let ticket: { ticketId: number; zendeskId: string; warning: string } | null = null;
     if (data.decision === "approved") {
+      const duplicate = await sql<Row>`select id from customer_users where lower(email) = lower(${s(request, "requested_email")}) limit 1`;
+      if (duplicate[0]) throw new Error("That email is already in the directory.");
       await sql`
         insert into customer_users (
           organization_id, name, email, title, permission_level, active
@@ -1417,10 +1670,26 @@ export const reviewRequest = createServerFn({ method: "POST" })
           'Requested user', 'regular', true
         )
       `;
+      ticket = await openWelcomeTicket(sql, {
+        name: s(request, "requested_name"),
+        email: s(request, "requested_email"),
+        organizationId,
+        source: "Approved access request",
+        detail: `Requested by ${s(request, "requested_by")}`,
+        actorName: actor.name,
+      });
+      const zendeskUserId = await upsertZendeskUser(sql, {
+        name: s(request, "requested_name"),
+        email: s(request, "requested_email"),
+        kind: "customer",
+      }).catch(() => "");
+      if (zendeskUserId) {
+        await sql`update customer_users set zendesk_user_id = ${zendeskUserId} where lower(email) = lower(${s(request, "requested_email")})`;
+      }
     }
     await sql`update user_requests set status = ${data.decision} where id = ${data.id}`;
     await audit(sql, actor, data.decision === "approved" ? "Approved user" : "Denied user", s(request, "requested_email"), s(request, "organization_id"));
-    return { ok: true };
+    return { ok: true, ticketId: ticket?.ticketId ?? 0, zendeskId: ticket?.zendeskId ?? "", warning: ticket?.warning ?? "" };
   });
 
 export const listProducts = createServerFn({ method: "GET" })
@@ -1452,6 +1721,7 @@ export const saveProduct = createServerFn({ method: "POST" })
       description: str(raw.description, 2000),
       specs: str(raw.specs, 2000),
       priceCents: price,
+      stock: Math.max(0, intish(raw.stock) ?? 0),
       imageUrl,
       available: flag(raw.available, true),
       visibility,
@@ -1470,6 +1740,7 @@ export const saveProduct = createServerFn({ method: "POST" })
           description = ${data.description},
           specs = ${data.specs},
           price_cents = ${data.priceCents},
+          stock = ${data.stock},
           image_url = ${data.imageUrl},
           available = ${data.available},
           visibility = ${data.visibility}
@@ -1479,10 +1750,10 @@ export const saveProduct = createServerFn({ method: "POST" })
       return { id: data.id };
     }
     const inserted = await sql<Row>`
-      insert into products (sku, name, category, description, specs, price_cents, image_url, available, visibility)
+      insert into products (sku, name, category, description, specs, price_cents, stock, image_url, available, visibility)
       values (
         ${data.sku}, ${data.name}, ${data.category}, ${data.description}, ${data.specs},
-        ${data.priceCents}, ${data.imageUrl}, ${data.available}, ${data.visibility}
+        ${data.priceCents}, ${data.stock}, ${data.imageUrl}, ${data.available}, ${data.visibility}
       )
       returning id
     `;
@@ -1622,6 +1893,7 @@ export const getOrder = createServerFn({ method: "GET" })
     const sql = await getSql();
     const actor = await loadActor(sql, context.userId);
     const order = await orderById(sql, data, actor);
+    const events = await orderEvents(sql, order.id);
     const orgs = await orgNames(sql, actor);
     const people = await sql.query<Row>(
       `select id, name, organization_id, can_order, permission_level from customer_users
@@ -1630,7 +1902,7 @@ export const getOrder = createServerFn({ method: "GET" })
     );
     const products = await sql<Row>`select id, name, sku, price_cents, available from products order by name`;
     return {
-      order,
+      order: { ...order, events },
       orgs,
       people: people.map((row) => ({
         id: n(row, "id"),
@@ -1645,7 +1917,183 @@ export const getOrder = createServerFn({ method: "GET" })
         priceCents: n(row, "price_cents"),
         available: b(row, "available"),
       })),
+      canEdit: actor.role !== "viewer",
+      canDelete: actor.role === "owner",
     };
+  });
+
+async function settleNewOrder(sql: Sql, orderId: number, actor: string) {
+  try {
+    await reserveOrder(sql, orderId);
+  } catch (error) {
+    await sql`delete from orders where id = ${orderId}`;
+    throw error;
+  }
+  await recordEvent(sql, { orderId, kind: "placed", to: "pending", actor, detail: "Stock held" });
+  await mailOrder(sql, orderId, "confirmation");
+  await enqueueJob(sql, "order_ticket", `order-${orderId}`, { orderId });
+  await runPortalJobs(sql).catch(() => undefined);
+}
+
+async function mailOrder(sql: Sql, orderId: number, template: string) {
+  const rows = await sql<Row>`
+    select o.ship_email, o.payment_status, o.tracking_number, o.tracking_carrier, cu.email as customer_email
+    from orders o
+    left join customer_users cu on cu.id = o.customer_user_id
+    where o.id = ${orderId}
+  `;
+  const row = rows[0];
+  if (!row) return;
+  const to = s(row, "ship_email") || s(row, "customer_email");
+  const number = `MT-${1000 + orderId}`;
+  if (template === "confirmation") {
+    await sendOrderEmail(sql, {
+      orderId,
+      to,
+      template,
+      subject: `${number} received`,
+      body: `We received ${number}. We will email you again when it ships. Payment: ${s(row, "payment_status") || "pending"}.`,
+    });
+    return;
+  }
+  if (template === "payment_due") {
+    await sendOrderEmail(sql, {
+      orderId,
+      to,
+      template,
+      subject: `${number} payment is still open`,
+      body: `${number} is still unpaid. Reply to this message or pay from the link in your account.`,
+    });
+    return;
+  }
+  if (template === "shipped" || template === "delivered") {
+    await sendOrderEmail(sql, {
+      orderId,
+      to,
+      template,
+      subject: template === "delivered" ? `${number} delivered` : `${number} shipped`,
+      body: `${number} is ${template}.${s(row, "tracking_number") ? ` Tracking ${s(row, "tracking_carrier")} ${s(row, "tracking_number")}.` : ""}`,
+    });
+  }
+}
+
+async function pushTicket(sql: Sql, ticketId: number) {
+  const rows = await sql<Row>`select * from tickets where id = ${ticketId}`;
+  const ticket = rows[0];
+  if (!ticket || s(ticket, "zendesk_id")) return;
+  const settings = await readZendesk(sql);
+  if (!supportConnected(settings)) throw new Error("Zendesk Support is not connected.");
+  const comments = await sql<Row>`select body from ticket_comments where ticket_id = ${ticketId} order by id limit 1`;
+  const created = await zendesk(settings, "/tickets.json", {
+    method: "POST",
+    body: JSON.stringify({
+      ticket: {
+        subject: s(ticket, "subject"),
+        comment: { body: comments[0] ? s(comments[0], "body") : s(ticket, "subject") },
+        status: "new",
+        requester: { name: s(ticket, "requester_name") || s(ticket, "requester_email"), email: s(ticket, "requester_email") },
+      },
+    }),
+  });
+  const remote = obj(created.ticket);
+  const zendeskId = remote.id != null ? String(remote.id) : "";
+  if (zendeskId) await sql`update tickets set zendesk_id = ${zendeskId} where id = ${ticketId}`;
+}
+
+async function ensureOrderTicket(sql: Sql, orderId: number) {
+  const rows = await sql<Row>`
+    select o.id, o.ticket_id, o.organization_id, o.notes, coalesce(org.name, '') as organization_name,
+      coalesce(cu.name, o.ship_name, '') as customer_name, coalesce(cu.email, o.ship_email, '') as customer_email
+    from orders o
+    left join organizations org on org.id = o.organization_id
+    left join customer_users cu on cu.id = o.customer_user_id
+    where o.id = ${orderId}
+  `;
+  const order = rows[0];
+  if (!order) return;
+  let ticketId = nid(order, "ticket_id") ?? 0;
+  if (!ticketId) {
+    const inserted = await sql<Row>`
+      insert into tickets (
+        subject, status, priority, category, organization_id, requester_name, requester_email, tags, view_label
+      ) values (
+        ${`Catalog order MT-${1000 + orderId}`}, 'open', 'normal', 'Ordering', ${n(order, "organization_id")},
+        ${s(order, "customer_name")}, ${s(order, "customer_email")}, 'order,pending_order', 'Pending Orders'
+      )
+      returning id
+    `;
+    ticketId = n(inserted[0], "id");
+    await sql`
+      insert into ticket_comments (ticket_id, author_name, body, public_note)
+      values (${ticketId}, 'Desk', ${`${s(order, "organization_name")}\n${s(order, "notes")}`}, true)
+    `;
+    await sql`update orders set ticket_id = ${ticketId}, updated_at = now() where id = ${orderId}`;
+  }
+  await pushTicket(sql, ticketId);
+  const fresh = await sql<Row>`select zendesk_id from tickets where id = ${ticketId}`;
+  const zendeskId = fresh[0] ? s(fresh[0], "zendesk_id") : "";
+  if (zendeskId) await sql`update orders set zendesk_ticket_id = ${zendeskId} where id = ${orderId}`;
+}
+
+async function sweepDesk(sql: Sql) {
+  const unpaid = await sql<Row>`
+    select id from orders
+    where payment_status in ('', 'pending', 'unpaid', 'portal')
+      and status not in ('cancelled', 'fulfilled')
+      and created_at < now() - interval '3 days'
+    limit 20
+  `;
+  for (const row of unpaid) {
+    const id = n(row, "id");
+    await enqueueJob(sql, "remind_unpaid", `remind-${id}`, { orderId: id });
+  }
+  const stale = await sql<Row>`
+    select id from orders
+    where shipment_status = 'unfulfilled' and status in ('approved', 'processing')
+      and created_at < now() - interval '2 days'
+    limit 20
+  `;
+  for (const row of stale) {
+    const id = n(row, "id");
+    await enqueueJob(sql, "stale_shipment", `stale-${id}`, { orderId: id });
+  }
+}
+
+export async function runPortalJobs(sql: Sql) {
+  await sweepDesk(sql);
+  const jobs = await dueJobs(sql, 12);
+  for (const job of jobs) {
+    let payload: { orderId?: number; ticketId?: number; emailId?: number } = {};
+    try {
+      payload = JSON.parse(job.payload) as typeof payload;
+    } catch {
+      payload = {};
+    }
+    try {
+      if (job.kind === "email" && payload.emailId) await resendStoredEmail(sql, payload.emailId);
+      else if (job.kind === "zendesk_ticket" && payload.ticketId) await pushTicket(sql, payload.ticketId);
+      else if (job.kind === "order_ticket" && payload.orderId) await ensureOrderTicket(sql, payload.orderId);
+      else if (job.kind === "remind_unpaid" && payload.orderId) await mailOrder(sql, payload.orderId, "payment_due");
+      else if (job.kind === "stale_shipment" && payload.orderId) {
+        await recordEvent(sql, { orderId: payload.orderId, kind: "attention", actor: "Desk", detail: "Still unfulfilled after 2 days" });
+      }
+      await finishJob(sql, job.id, "", job.attempts + 1, job.maxAttempts);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Job failed.";
+      await finishJob(sql, job.id, message, job.attempts + 1, job.maxAttempts);
+    }
+  }
+}
+
+export const runDeskJobs = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertWrite(actor);
+    await runPortalJobs(sql);
+    await audit(sql, actor, "Ran desk jobs", "queue", "");
+    return { ok: true };
   });
 
 export const createOrder = createServerFn({ method: "POST" })
@@ -1793,6 +2241,7 @@ export const createOrder = createServerFn({ method: "POST" })
         await sql`update orders set payment_url = ${paymentUrl}, payment_status = 'portal' where id = ${id}`;
       }
     }
+    await settleNewOrder(sql, id, actor.name);
     return { id, paymentUrl };
   });
 
@@ -1806,6 +2255,15 @@ export const updateOrder = createServerFn({ method: "POST" })
     const shipments = ["unfulfilled", "shipped", "out_for_delivery", "delivered"];
     const shipmentStatus = str(raw.shipmentStatus, 32);
     if (!id || !allowed.includes(status)) throw new Error("Choose an order status.");
+    const items = Array.isArray(raw.items)
+      ? raw.items.map((item) => {
+          const row = obj(item);
+          const quantity = intish(row.quantity) ?? 0;
+          if (quantity < 1 || quantity > 999) throw new Error("Enter a quantity between 1 and 999.");
+          return { productId: intish(row.productId), sku: str(row.sku, 40), quantity };
+        })
+      : null;
+    if (items && !items.length) throw new Error("An order needs at least one item.");
     return {
       id,
       status,
@@ -1814,6 +2272,8 @@ export const updateOrder = createServerFn({ method: "POST" })
       shipmentStatus: shipments.includes(shipmentStatus) ? shipmentStatus : "unfulfilled",
       trackingNumber: str(raw.trackingNumber, 80),
       trackingCarrier: str(raw.trackingCarrier, 40),
+      notes: typeof raw.notes === "string" ? str(raw.notes, 2000) : null,
+      items,
     };
   })
   .handler(async ({ context, data }) => {
@@ -1821,6 +2281,13 @@ export const updateOrder = createServerFn({ method: "POST" })
     const actor = await loadActor(sql, context.userId);
     assertWrite(actor);
     const order = await orderById(sql, data.id, actor);
+    if (data.items) {
+      await rebalanceHold(
+        sql,
+        data.id,
+        data.items.filter((item) => item.productId).map((item) => ({ productId: item.productId as number, quantity: item.quantity })),
+      );
+    }
     await sql`
       update orders set
         status = ${data.status},
@@ -1829,11 +2296,85 @@ export const updateOrder = createServerFn({ method: "POST" })
         shipment_status = ${data.shipmentStatus},
         tracking_number = ${data.trackingNumber},
         tracking_carrier = ${data.trackingCarrier},
+        notes = coalesce(${data.notes}, notes),
         updated_at = now()
       where id = ${data.id}
     `;
+    if (data.items) {
+      const existing = await sql<Row>`select * from order_items where order_id = ${data.id}`;
+      const catalog = await sql<Row>`select * from products`;
+      await sql`delete from order_items where order_id = ${data.id}`;
+      for (const item of data.items) {
+        const prior = item.productId
+          ? existing.find((row) => nid(row, "product_id") === item.productId)
+          : existing.find((row) => s(row, "sku") === item.sku);
+        const product = item.productId ? catalog.find((row) => n(row, "id") === item.productId) : undefined;
+        const source = prior ?? product;
+        if (!source) throw new Error("That product is not on this order or in the catalog.");
+        await sql`
+          insert into order_items (order_id, product_id, product_name, sku, quantity, unit_price_cents)
+          values (
+            ${data.id},
+            ${prior ? nid(prior, "product_id") : item.productId},
+            ${prior ? s(prior, "product_name") : s(source, "name")},
+            ${prior ? s(prior, "sku") : s(source, "sku")},
+            ${item.quantity},
+            ${prior ? n(prior, "unit_price_cents") : n(source, "price_cents")}
+          )
+        `;
+      }
+    }
+    if (data.status === "cancelled") await setInventory(sql, data.id, "released");
+    else if (order.status === "cancelled") await setInventory(sql, data.id, "held");
+    if (order.status !== data.status) {
+      await recordEvent(sql, { orderId: data.id, kind: "status", from: order.status, to: data.status, actor: actor.name });
+    }
+    if (order.shipmentStatus !== data.shipmentStatus) {
+      await recordEvent(sql, {
+        orderId: data.id,
+        kind: "shipment",
+        from: order.shipmentStatus,
+        to: data.shipmentStatus,
+        actor: actor.name,
+        detail: data.trackingNumber,
+      });
+      if (data.shipmentStatus === "shipped" || data.shipmentStatus === "delivered") {
+        await mailOrder(sql, data.id, data.shipmentStatus);
+      }
+    }
     await audit(sql, actor, "Updated order", order.number, data.status);
     return { ok: true };
+  });
+
+export const deleteOrder = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((id: number) => {
+    const value = intish(id);
+    if (!value) throw new Error("Missing order.");
+    return value;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    if (actor.role !== "owner") throw new Error("Only a Super Admin can delete an order.");
+    const order = await orderById(sql, data, actor);
+    await setInventory(sql, data, "released");
+    await sql`delete from orders where id = ${data}`;
+    await audit(sql, actor, "Deleted order", order.number, order.organizationName);
+    return { ok: true };
+  });
+
+export const trackAwb = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const awb = str(typeof input === "string" ? input : obj(input).awb, 40);
+    if (awb.replace(/[^0-9A-Za-z]/g, "").length < 8) throw new Error("Scan or type the air waybill.");
+    return awb;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    await loadActor(sql, context.userId);
+    return lookupAwb(data);
   });
 
 export const linkOrderTicket = createServerFn({ method: "POST" })
@@ -1877,7 +2418,7 @@ export const linkOrderTicket = createServerFn({ method: "POST" })
     let zendeskId = "";
     let warning = "";
     const settings = await readZendesk(sql);
-    if (settings.apiToken) {
+    if (settings.apiToken || supportConnected(settings)) {
       try {
         const orgRows = await sql<Row>`select zendesk_org_id from organizations where id = ${order.organizationId}`;
         const zendeskOrg = orgRows[0] ? s(orgRows[0], "zendesk_org_id") : "";
@@ -1900,6 +2441,7 @@ export const linkOrderTicket = createServerFn({ method: "POST" })
       } catch (error) {
         warning = error instanceof Error ? error.message : "Could not create the Zendesk ticket.";
         await rememberZendesk(sql, "error", warning, false);
+        await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
       }
     }
     await sql`
@@ -2017,7 +2559,7 @@ export const testForm = createServerFn({ method: "POST" })
     `;
     let warning = "";
     const settings = await readZendesk(sql);
-    if (settings.apiToken) {
+    if (settings.apiToken || supportConnected(settings)) {
       try {
         const orgRows = await sql<Row>`select zendesk_org_id from organizations where id = ${data.organizationId}`;
         const zendeskOrg = orgRows[0] ? s(orgRows[0], "zendesk_org_id") : "";
@@ -2129,6 +2671,8 @@ export const getIntegration = createServerFn({ method: "GET" })
       webhookId: conversations.webhookId,
       oauthReady: oauthReady(live),
       oauthClientId: live.oauthClientId,
+      oauthFromEnv: Boolean(envZendesk().oauthClientId && envZendesk().oauthClientSecret),
+      oauthSecretSet: Boolean(live.oauthClientSecret),
       orgs: orgs.map(mapOrg),
     };
   });
@@ -2142,6 +2686,10 @@ export const saveIntegration = createServerFn({ method: "POST" })
       email: str(raw.email, 180),
       apiToken: str(raw.apiToken, 200),
       clearToken: flag(raw.clearToken),
+      oauthClientId: str(raw.oauthClientId, 120),
+      oauthClientSecret: str(raw.oauthClientSecret, 200),
+      oauthScopes: str(raw.oauthScopes, 180) || "read write",
+      clearOauth: flag(raw.clearOauth),
     };
   })
   .handler(async ({ context, data }) => {
@@ -2149,22 +2697,25 @@ export const saveIntegration = createServerFn({ method: "POST" })
     const actor = await loadActor(sql, context.userId);
     assertAdmin(actor);
     const live = await readZendesk(sql);
-    if (live.fromEnv) {
-      throw new Error("Zendesk is configured with ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, and ZENDESK_API_TOKEN. Those values are used automatically.");
-    }
     const current = live;
     const token = data.clearToken ? "" : data.apiToken || current.apiToken;
+    const oauthSecret = data.clearOauth ? "" : data.oauthClientSecret || current.oauthClientSecret;
+    const oauthId = data.clearOauth ? "" : data.oauthClientId || current.oauthClientId;
     await sql`
-      insert into integration_settings (id, subdomain, email, api_token, last_status, last_error)
-      values (1, ${data.subdomain}, ${data.email}, ${token}, 'saved', '')
+      insert into integration_settings (id, subdomain, email, api_token, oauth_client_id, oauth_client_secret, oauth_scopes, last_status, last_error)
+      values (1, ${data.subdomain || "shop"}, ${data.email}, ${token}, ${oauthId}, ${oauthSecret}, ${data.oauthScopes}, 'saved', '')
       on conflict (id) do update set
         subdomain = excluded.subdomain,
         email = excluded.email,
         api_token = excluded.api_token,
+        oauth_client_id = excluded.oauth_client_id,
+        oauth_client_secret = excluded.oauth_client_secret,
+        oauth_scopes = excluded.oauth_scopes,
         last_status = 'saved',
         last_error = ''
     `;
-    await audit(sql, actor, "Saved Zendesk", data.subdomain || "cleared", data.email);
+    oauthCache.__zendeskOauth = undefined;
+    await audit(sql, actor, "Saved Zendesk", data.subdomain || "shop", data.email || oauthId);
     return { ok: true };
   });
 
@@ -2193,7 +2744,7 @@ export const testIntegration = createServerFn({ method: "POST" })
     }
     try {
       if (oauthReady(settings)) {
-        await zendesk(settings, "/tickets.json?per_page=1");
+        await zendesk(settings, "/users.json?per_page=1");
         await rememberZendesk(sql, "connected", "", false);
         await audit(sql, actor, "Tested Zendesk", settings.subdomain, "OAuth client credentials");
         return { ok: true, name: `${settings.subdomain} OAuth` };
@@ -2233,8 +2784,10 @@ export const syncZendesk = createServerFn({ method: "POST" })
     }
     try {
       const imported = await importFromZendesk(sql, actor, settings);
+      const users = await pushPortalUsers(sql);
       zendeskSyncAt = Date.now();
-      return { imported };
+      if (users.failed && !users.synced) throw new Error(users.lastError);
+      return { imported, users: users.synced };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Sync failed.";
       await rememberZendesk(sql, "error", message, false);
@@ -2242,9 +2795,66 @@ export const syncZendesk = createServerFn({ method: "POST" })
     }
   });
 
+async function pushPortalUsers(sql: Sql) {
+  const staff = await sql<Row>`select user_id, name, email from portal_staff where email <> ''`;
+  const customers = await sql<Row>`select id, name, email from customer_users where email <> ''`;
+  const shoppers = await sql<Row>`select id, name, email from shop_customers where email <> ''`;
+  let synced = 0;
+  let failed = 0;
+  let lastError = "";
+  for (const row of staff) {
+    try {
+      const id = await upsertZendeskUser(sql, { name: s(row, "name"), email: s(row, "email"), kind: "staff" });
+      if (id) await sql`update portal_staff set zendesk_user_id = ${id} where user_id = ${s(row, "user_id")}`;
+      synced += 1;
+    } catch (error) {
+      failed += 1;
+      lastError = error instanceof Error ? error.message : "Could not sync a user.";
+    }
+  }
+  for (const row of customers) {
+    try {
+      const id = await upsertZendeskUser(sql, { name: s(row, "name"), email: s(row, "email"), kind: "customer" });
+      if (id) await sql`update customer_users set zendesk_user_id = ${id} where id = ${n(row, "id")}`;
+      synced += 1;
+    } catch (error) {
+      failed += 1;
+      lastError = error instanceof Error ? error.message : "Could not sync a user.";
+    }
+  }
+  for (const row of shoppers) {
+    try {
+      const id = await upsertZendeskUser(sql, { name: s(row, "name"), email: s(row, "email"), kind: "shop" });
+      if (id) await sql`update shop_customers set zendesk_user_id = ${id} where id = ${n(row, "id")}`;
+      synced += 1;
+    } catch (error) {
+      failed += 1;
+      lastError = error instanceof Error ? error.message : "Could not sync a user.";
+    }
+  }
+  return { synced, failed, lastError };
+}
+
+export const syncPortalUsers = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertWrite(actor);
+    const settings = await readZendesk(sql);
+    if (!supportConnected(settings)) {
+      throw new Error("Zendesk is not connected. Add the OAuth client id and secret for shop, then test access.");
+    }
+    const users = await pushPortalUsers(sql);
+    if (users.failed && !users.synced) throw new Error(users.lastError || "Could not sync users.");
+    await rememberZendesk(sql, users.failed ? "error" : "connected", users.lastError, false);
+    await audit(sql, actor, "Synced Zendesk users", String(users.synced), users.lastError);
+    return { synced: users.synced, failed: users.failed };
+  });
+
 export const getSettings = createServerFn({ method: "GET" })
   .middleware([authMiddleware])
-  .handler(async ({ context }): Promise<{ settings: PortalSettings; staff: Staff[]; audit: Audit[]; orgs: Named[] }> => {
+  .handler(async ({ context }) => {
     const sql = await getSql();
     const actor = await loadActor(sql, context.userId);
     const rows = await sql<Row>`select * from portal_settings where id = 1`;
@@ -2266,6 +2876,8 @@ export const getSettings = createServerFn({ method: "GET" })
             order by created_at desc
             limit 40
           `;
+    const mail = await resolveMail(sql);
+    const fromMatch = /<([^>]+)>/.exec(mail.from);
     return {
       settings: {
         brandName: s(row, "brand_name") || "Manage Tech Service",
@@ -2274,6 +2886,12 @@ export const getSettings = createServerFn({ method: "GET" })
         notifyNewTicket: row.notify_new_ticket == null ? true : b(row, "notify_new_ticket"),
         notifyNewOrder: row.notify_new_order == null ? true : b(row, "notify_new_order"),
         customerCatalogVisible: row.customer_catalog_visible == null ? true : b(row, "customer_catalog_visible"),
+      },
+      mail: {
+        fromEmail: fromMatch?.[1] || mail.from || "noreply@managetechservice.com",
+        keySet: Boolean(mail.key),
+        status: s(row, "resend_status"),
+        error: s(row, "resend_error"),
       },
       staff: actor.organizationId
         ? staff.filter((item) => nid(item, "organization_id") === actor.organizationId || s(item, "user_id") === actor.userId).map(mapStaff)
@@ -2318,6 +2936,96 @@ export const saveSettings = createServerFn({ method: "POST" })
         customer_catalog_visible = excluded.customer_catalog_visible
     `;
     await audit(sql, actor, "Updated settings", data.brandName, data.supportEmail);
+    return { ok: true };
+  });
+
+export const saveResend = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const fromEmail = str(raw.fromEmail, 180).replace(/[<>]/g, "");
+    if (!fromEmail.includes("@")) throw new Error("Enter the noreply address.");
+    return { fromEmail, apiKey: str(raw.apiKey, 200) };
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const current = await sql<Row>`select resend_api_key from portal_settings where id = 1`;
+    const kept = current[0] ? s(current[0], "resend_api_key") : "";
+    const key = data.apiKey || kept;
+    const from = `Manage Tech Service <${data.fromEmail}>`;
+    await sql`
+      insert into portal_settings (id, resend_api_key, email_from)
+      values (1, ${key}, ${from})
+      on conflict (id) do update set
+        resend_api_key = excluded.resend_api_key,
+        email_from = excluded.email_from
+    `;
+    await audit(sql, actor, "Updated Resend", data.fromEmail, key ? "API key saved" : "No API key");
+    return { ok: true };
+  });
+
+export const testResend = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const mail = await resolveMail(sql);
+    if (!mail.key) throw new Error("Add a Resend API key first.");
+    const response = await fetch("https://api.resend.com/domains", {
+      headers: { Authorization: `Bearer ${mail.key}` },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      const message = text.slice(0, 180) || "Resend rejected the API key.";
+      await sql`update portal_settings set resend_status = 'error', resend_error = ${message} where id = 1`;
+      throw new Error(message);
+    }
+    let domains = 0;
+    try {
+      const payload = JSON.parse(text) as { data?: unknown[] };
+      domains = Array.isArray(payload.data) ? payload.data.length : 0;
+    } catch {
+      domains = 0;
+    }
+    const message = domains ? `Connected. ${domains} sending domain${domains === 1 ? "" : "s"}.` : "Connected. No sending domain is verified yet.";
+    await sql`update portal_settings set resend_status = 'connected', resend_error = ${message} where id = 1`;
+    return { ok: true, message };
+  });
+
+export const sendTestEmail = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const to = str(typeof input === "string" ? input : obj(input).to, 180);
+    if (!to.includes("@")) throw new Error("Enter the address that should receive the test.");
+    return to;
+  })
+  .handler(async ({ context, data }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const mail = await resolveMail(sql);
+    if (!mail.key) throw new Error("Add a Resend API key first.");
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${mail.key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: mail.from,
+        to: [data],
+        subject: "Manage Tech Service test email",
+        text: `This is a test from the admin desk. It was sent from ${mail.from}.`,
+      }),
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      const message = text.slice(0, 180) || "Resend did not send the test.";
+      await sql`update portal_settings set resend_status = 'error', resend_error = ${message} where id = 1`;
+      throw new Error(message);
+    }
+    await sql`update portal_settings set resend_status = 'connected', resend_error = ${`Test sent to ${data}`} where id = 1`;
+    await audit(sql, actor, "Sent test email", data, mail.from);
     return { ok: true };
   });
 
@@ -2779,6 +3487,20 @@ export const shopRegister = createServerFn({ method: "POST" })
       insert into shop_customers (email, name, password_hash, session_token)
       values (${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${token})
     `;
+    const shopOrg = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
+    await openWelcomeTicket(sql, {
+      name: data.name,
+      email: data.email,
+      organizationId: shopOrg[0] ? n(shopOrg[0], "id") : null,
+      source: "Online shop account",
+      detail: "Customer created an account.",
+      actorName: "Online shop",
+    }).catch(() => undefined);
+    await upsertZendeskUser(sql, { name: data.name, email: data.email, kind: "shop" })
+      .then(async (zendeskUserId) => {
+        if (zendeskUserId) await sql`update shop_customers set zendesk_user_id = ${zendeskUserId} where email = ${data.email}`;
+      })
+      .catch(() => undefined);
     return { token, email: data.email, name: data.name };
   });
 
@@ -2933,6 +3655,20 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
           returning id
         `;
         customerId = n(insertedCustomer[0], "id");
+        const shopOrgId = n(org, "id");
+        await openWelcomeTicket(sql, {
+          name: data.name,
+          email: data.email,
+          organizationId: shopOrgId,
+          source: "Checkout account",
+          detail: "Customer created an account while placing an order.",
+          actorName: "Online shop",
+        }).catch(() => undefined);
+        await upsertZendeskUser(sql, { name: data.name, email: data.email, kind: "shop" })
+          .then(async (zendeskUserId) => {
+            if (zendeskUserId) await sql`update shop_customers set zendesk_user_id = ${zendeskUserId} where id = ${customerId}`;
+          })
+          .catch(() => undefined);
       }
     }
     if (!customerId) {
@@ -3002,6 +3738,7 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
       insert into audit_logs (actor_user_id, actor_name, action, target, detail)
       values ('', 'Online shop', 'Created order', ${`MT-${1000 + id}`}, ${data.email})
     `;
+    await settleNewOrder(sql, id, "Online shop");
     return { id, number: `MT-${1000 + id}`, paymentUrl, token, totalCents: subtotal + shipping.cents };
   });
 

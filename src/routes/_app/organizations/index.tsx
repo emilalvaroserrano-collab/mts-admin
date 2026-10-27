@@ -39,6 +39,7 @@ function CompaniesPage() {
       toast.success("Company added");
       client.invalidateQueries({ queryKey: ["orgs"] });
       client.invalidateQueries({ queryKey: ["dashboard"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
       setOpen(false);
       navigate({ to: "/organizations/$orgId", params: { orgId: String(result.id) } });
     },

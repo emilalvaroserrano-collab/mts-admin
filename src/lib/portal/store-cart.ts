@@ -6,6 +6,8 @@ const KEY = "mts-store-cart";
 const EMPTY: CartLine[] = [];
 let lines: CartLine[] = EMPTY;
 const listeners = new Set<() => void>();
+let notice: { sku: string; at: number } | null = null;
+const noticeListeners = new Set<() => void>();
 
 function read(): CartLine[] {
   if (typeof window === "undefined") return EMPTY;
@@ -36,6 +38,8 @@ export function addToCart(sku: string, quantity = 1) {
   const next = found
     ? current.map((line) => (line.sku === sku ? { ...line, quantity: Math.min(99, line.quantity + quantity) } : line))
     : [...current, { sku, quantity }];
+  notice = { sku, at: Date.now() };
+  noticeListeners.forEach((listener) => listener());
   write(next);
 }
 
@@ -57,4 +61,15 @@ function subscribe(listener: () => void) {
 
 export function useCart() {
   return useSyncExternalStore(subscribe, () => lines, () => EMPTY);
+}
+
+export function useCartNotice() {
+  return useSyncExternalStore(
+    (listener) => {
+      noticeListeners.add(listener);
+      return () => noticeListeners.delete(listener);
+    },
+    () => notice,
+    () => null,
+  );
 }

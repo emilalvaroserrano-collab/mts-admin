@@ -31,6 +31,7 @@ function CompanyPage() {
       toast.success("Company saved");
       client.invalidateQueries({ queryKey: ["org", id] });
       client.invalidateQueries({ queryKey: ["orgs"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });

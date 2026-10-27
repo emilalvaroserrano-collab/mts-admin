@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { Headphones, Keyboard, Laptop, Monitor, Plus, type LucideIcon } from "lucide-react";
-import { useRef, useState } from "react";
+import { ArrowLeft, Headphones, ImagePlus, Keyboard, Laptop, LayoutGrid, List, Monitor, type LucideIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { importProducts, listProducts, removeProduct, saveProduct } from "@/lib/portal/api";
 import type { Product } from "@/lib/portal/types";
 import { money } from "@/lib/portal/format";
-import { Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, Textarea, Toggle, errorText } from "@/components/ui";
+import { Badge, Button, ErrorNote, Field, Input, Loading, PageHeader, Panel, Select, Textarea, errorText } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/products")({
   component: ProductsPage,
@@ -30,6 +30,7 @@ const blank = (): Product => ({
   description: "",
   specs: "",
   priceCents: 0,
+  stock: 0,
   imageUrl: "",
   available: true,
   visibility: "all",
@@ -169,13 +170,17 @@ function ProductsPage() {
   const query = useQuery({ queryKey: ["products"], queryFn: () => listProducts() });
   const [draft, setDraft] = useState<Product | null>(null);
   const [dollars, setDollars] = useState("");
+  const [stock, setStock] = useState("0");
   const [category, setCategory] = useState<string>("All");
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<"grid" | "list">("grid");
   const save = useMutation({
     mutationFn: (product: Product) => saveProduct({ data: { ...product, id: product.id || undefined } }),
     onSuccess: () => {
       toast.success(draft?.id ? "Product updated" : "Product added to the catalog");
       setDraft(null);
       client.invalidateQueries({ queryKey: ["products"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
@@ -185,6 +190,7 @@ function ProductsPage() {
       toast.success(result.archived ? "Marked unavailable. It stays on past orders." : "Removed from the catalog");
       setDraft(null);
       client.invalidateQueries({ queryKey: ["products"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
@@ -194,6 +200,7 @@ function ProductsPage() {
       const skipped = result.skipped ? `, ${result.skipped} skipped` : "";
       toast.success(`Added ${result.created}, updated ${result.updated}${skipped}`);
       client.invalidateQueries({ queryKey: ["products"] });
+      client.invalidateQueries({ queryKey: ["shell"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
@@ -201,6 +208,17 @@ function ProductsPage() {
   function open(product: Product) {
     setDraft(product);
     setDollars(product.id ? (product.priceCents / 100).toFixed(2) : "");
+    setStock(String(product.stock ?? 0));
+  }
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("mts-catalog-view");
+    if (stored === "list" || stored === "grid") setView(stored);
+  }, []);
+
+  function chooseView(next: "grid" | "list") {
+    setView(next);
+    window.localStorage.setItem("mts-catalog-view", next);
   }
 
   async function onSpreadsheet(file: File) {
@@ -227,7 +245,55 @@ function ProductsPage() {
   if (query.isPending) return <Loading />;
   if (query.isError) return <ErrorNote message={query.error.message} />;
 
-  const shown = query.data.filter((product) => category === "All" || product.category === category);
+  const needle = search.trim().toLowerCase();
+  const shown = query.data.filter((product) => {
+    if (category !== "All" && product.category !== category) return false;
+    if (!needle) return true;
+    return `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(needle);
+  });
+
+  if (draft) {
+    return (
+      <ProductEditor
+        draft={draft}
+        dollars={dollars}
+        stock={stock}
+        saving={save.isPending}
+        removing={remove.isPending}
+        onChange={setDraft}
+        onDollars={setDollars}
+        onStock={setStock}
+        onClose={() => setDraft(null)}
+        onRemove={() => remove.mutate(draft.id)}
+        onSave={() => {
+          const priceCents = Math.round(Number(dollars) * 100);
+          const quantity = Number(stock);
+          if (!draft.name.trim() || !draft.sku.trim()) {
+            toast.error("Title and SKU are required.");
+            return;
+          }
+          if (!Number.isFinite(priceCents) || priceCents < 0) {
+            toast.error("Enter a price.");
+            return;
+          }
+          if (!Number.isInteger(quantity) || quantity < 0) {
+            toast.error("Enter a whole quantity.");
+            return;
+          }
+          save.mutate({ ...draft, priceCents, stock: quantity });
+        }}
+        onPhoto={(file) => {
+          if (file.size > 8_000_000) {
+            toast.error("Use a photo under 8 MB.");
+            return;
+          }
+          void readProductPhoto(file)
+            .then((imageUrl) => setDraft({ ...draft, imageUrl }))
+            .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not read that photo."));
+        }}
+      />
+    );
+  }
 
   return (
     <div>
@@ -260,126 +326,273 @@ function ProductsPage() {
           if (file) void onSpreadsheet(file);
         }}
       />
-      <div className="mb-6 flex gap-2 overflow-x-auto pb-1">
-        {["All", ...CATEGORIES].map((item) => (
-          <button
-            key={item}
-            type="button"
-            onClick={() => setCategory(item)}
-            className={
-              category === item
-                ? "h-8 shrink-0 rounded-lg bg-ink px-3 text-[13px] font-semibold text-white"
-                : "h-8 shrink-0 rounded-lg bg-surface px-3 text-[13px] font-medium text-ink shadow-[0_1px_0_rgba(0,0,0,0.04)]"
-            }
-          >
-            {item}
-          </button>
-        ))}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <button
-          type="button"
-          onClick={() => open(blank())}
-          className="grid min-h-72 place-items-center rounded-xl border border-dashed border-line-strong bg-surface text-ink"
-        >
-          <span className="grid justify-items-center gap-2">
-            <Plus className="size-6" strokeWidth={1.5} />
-            <span className="text-sm font-medium">New product</span>
-          </span>
-        </button>
-        {shown.map((product) => {
-          const Icon = ICONS[product.category] ?? Monitor;
-          return (
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {["All", ...CATEGORIES].map((item) => (
             <button
-              key={product.id}
+              key={item}
               type="button"
-              onClick={() => open(product)}
-              className="overflow-hidden rounded-xl border border-line bg-surface text-left shadow-[0_1px_0_rgba(0,0,0,0.04)] hover:border-line-strong"
+              onClick={() => setCategory(item)}
+              className={
+                category === item
+                  ? "h-9 shrink-0 rounded-lg bg-ink px-3 text-[13px] font-semibold text-white"
+                  : "h-9 shrink-0 rounded-lg border border-line bg-surface px-3 text-[13px] font-medium text-ink"
+              }
             >
-              <div className="grid aspect-[4/3] place-items-center bg-[#f5f5f7] p-6">
-                {product.imageUrl ? (
-                  <img src={product.imageUrl} alt="" className="h-full w-full object-contain" />
-                ) : (
-                  <Icon className="size-16 text-ink/80" strokeWidth={1.25} />
-                )}
-              </div>
-              <div className="px-5 py-5">
-                <p className="text-xs font-medium text-muted">{product.category}</p>
-                <p className="mt-1 text-xl font-medium tracking-tight">{product.name}</p>
-                <p className="mt-1 line-clamp-2 text-sm text-muted">{product.description || product.specs}</p>
-                <div className="mt-4 flex items-baseline justify-between gap-3">
-                  <p className="text-lg font-medium tracking-tight">{money(product.priceCents)}</p>
-                  <p className="text-xs text-subtle">{product.available ? "Available" : "Unavailable"}</p>
-                </div>
-              </div>
+              {item}
             </button>
-          );
-        })}
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search products"
+            aria-label="Search products"
+            className="h-9 sm:w-56"
+          />
+          <div className="flex shrink-0 rounded-lg border border-line bg-surface p-0.5" role="group" aria-label="Catalog view">
+            <button
+              type="button"
+              aria-pressed={view === "grid"}
+              aria-label="Grid view"
+              onClick={() => chooseView("grid")}
+              className={view === "grid" ? "grid size-8 place-items-center rounded-md bg-ink text-white" : "grid size-8 place-items-center rounded-md text-muted"}
+            >
+              <LayoutGrid className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "list"}
+              aria-label="List view"
+              onClick={() => chooseView("list")}
+              className={view === "list" ? "grid size-8 place-items-center rounded-md bg-ink text-white" : "grid size-8 place-items-center rounded-md text-muted"}
+            >
+              <List className="size-4" />
+            </button>
+          </div>
+        </div>
       </div>
-      {shown.length === 0 ? <p className="mt-8 text-sm text-muted">Nothing in {category} yet.</p> : null}
-      <Modal
-        open={Boolean(draft)}
-        onOpenChange={(openState) => {
-          if (!openState) setDraft(null);
-        }}
-        title={draft?.id ? "Edit product" : "New product"}
-        description={draft?.id ? "Update the photo, price, and who can order it." : "Add one product to the catalog."}
-      >
-        {draft ? (
-          <form
-            className="grid gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const priceCents = Math.round(Number(dollars) * 100);
-              if (!draft.name.trim() || !draft.sku.trim()) {
-                toast.error("Name and SKU are required.");
-                return;
-              }
-              if (!Number.isFinite(priceCents) || priceCents < 0) {
-                toast.error("Enter a price.");
-                return;
-              }
-              save.mutate({ ...draft, priceCents });
-            }}
-          >
-            <div className="overflow-hidden rounded-2xl bg-[#f5f5f7]">
+      {shown.length === 0 ? <p className="text-sm text-muted">No products match this view.</p> : null}
+      {view === "grid" ? (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {shown.map((product) => {
+            const Icon = ICONS[product.category] ?? Monitor;
+            return (
+              <button
+                key={product.id}
+                type="button"
+                onClick={() => open(product)}
+                className="overflow-hidden rounded-xl border border-line bg-surface text-left shadow-[0_1px_0_rgba(0,0,0,0.04)] hover:border-line-strong"
+              >
+                <div className="grid aspect-[4/3] place-items-center bg-[#f5f5f7] p-6">
+                  {product.imageUrl ? (
+                    <img src={product.imageUrl} alt="" className="h-full w-full object-contain" />
+                  ) : (
+                    <Icon className="size-16 text-ink/80" strokeWidth={1.25} />
+                  )}
+                </div>
+                <div className="px-5 py-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-muted">{product.category}</p>
+                    <Badge tone={product.available ? "good" : "neutral"}>{product.available ? "Active" : "Draft"}</Badge>
+                  </div>
+                  <p className="mt-1 text-xl font-medium tracking-tight">{product.name}</p>
+                  <p className="mt-1 line-clamp-2 text-sm text-muted">{product.description || product.specs}</p>
+                  <div className="mt-4 flex items-baseline justify-between gap-3">
+                    <p className="text-lg font-medium tracking-tight">{money(product.priceCents)}</p>
+                    <p className="text-xs text-subtle">{product.stock} in stock</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
+          <table className="w-full min-w-[40rem] text-left text-sm">
+            <thead className="text-xs text-muted">
+              <tr>
+                <th className="px-4 py-3 font-medium">Product</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Inventory</th>
+                <th className="px-4 py-3 font-medium">Category</th>
+                <th className="px-4 py-3 text-right font-medium">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((product) => (
+                <tr key={product.id} className="border-t border-line">
+                  <td className="px-4 py-3">
+                    <button type="button" onClick={() => open(product)} className="flex items-center gap-3 text-left">
+                      <ProductThumb product={product} />
+                      <span>
+                        <span className="block font-medium">{product.name}</span>
+                        <span className="block text-xs text-muted">{product.sku}</span>
+                      </span>
+                    </button>
+                  </td>
+                  <td className="px-4 py-3">
+                    <Badge tone={product.available ? "good" : "neutral"}>{product.available ? "Active" : "Draft"}</Badge>
+                  </td>
+                  <td className="px-4 py-3 tabular-nums">{product.stock} in stock</td>
+                  <td className="px-4 py-3 text-muted">{product.category}</td>
+                  <td className="px-4 py-3 text-right font-medium tabular-nums">{money(product.priceCents)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductThumb({ product }: { product: Product }) {
+  const Icon = ICONS[product.category] ?? Monitor;
+  return (
+    <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-lg bg-[#f5f5f7]">
+      {product.imageUrl ? <img src={product.imageUrl} alt="" className="size-full object-contain" /> : <Icon className="size-4 text-ink" />}
+    </span>
+  );
+}
+
+function ProductEditor({
+  draft,
+  dollars,
+  stock,
+  saving,
+  removing,
+  onChange,
+  onDollars,
+  onStock,
+  onClose,
+  onRemove,
+  onSave,
+  onPhoto,
+}: {
+  draft: Product;
+  dollars: string;
+  stock: string;
+  saving: boolean;
+  removing: boolean;
+  onChange: (product: Product) => void;
+  onDollars: (value: string) => void;
+  onStock: (value: string) => void;
+  onClose: () => void;
+  onRemove: () => void;
+  onSave: () => void;
+  onPhoto: (file: File) => void;
+}) {
+  return (
+    <form
+      className="mx-auto max-w-5xl"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave();
+      }}
+    >
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <button type="button" onClick={onClose} className="inline-flex items-center gap-2 text-sm font-medium text-ink">
+          <ArrowLeft className="size-4" />
+          Products
+        </button>
+        <div className="flex flex-wrap gap-2">
+          {draft.id ? (
+            <Button type="button" variant="danger" disabled={removing} onClick={onRemove}>
+              {removing ? "Removing" : "Delete"}
+            </Button>
+          ) : null}
+          <Button type="button" variant="secondary" onClick={onClose}>
+            Discard
+          </Button>
+          <Button type="submit" disabled={saving}>
+            {saving ? "Saving" : "Save"}
+          </Button>
+        </div>
+      </div>
+      <h1 className="mb-4 text-xl font-semibold tracking-tight">{draft.id ? draft.name || "Edit product" : "Add product"}</h1>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="grid gap-4">
+          <Panel className="grid gap-3">
+            <Field label="Title">
+              <Input value={draft.name} onChange={(event) => onChange({ ...draft, name: event.target.value })} placeholder="Short sleeve t-shirt" required />
+            </Field>
+            <Field label="Description">
+              <Textarea value={draft.description} onChange={(event) => onChange({ ...draft, description: event.target.value })} placeholder="What the customer should know before they order." />
+            </Field>
+          </Panel>
+          <Panel>
+            <h2 className="text-sm font-semibold">Media</h2>
+            <label
+              className="mt-3 grid cursor-pointer place-items-center rounded-xl border border-dashed border-line-strong bg-[#f6f6f7] px-4 py-8 text-center"
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                const file = event.dataTransfer.files?.[0];
+                if (file) onPhoto(file);
+              }}
+            >
               {draft.imageUrl ? (
-                <img src={draft.imageUrl} alt="" className="aspect-[4/3] w-full object-contain p-4" />
+                <img src={draft.imageUrl} alt="" className="max-h-56 w-full object-contain" />
               ) : (
-                <div className="grid aspect-[4/3] place-items-center text-sm text-muted">No photo yet</div>
+                <span className="grid justify-items-center gap-2 text-sm text-muted">
+                  <ImagePlus className="size-6" />
+                  Add image, or drop one here
+                </span>
               )}
-            </div>
-            <Field label="Photo" hint="Full product photo. Large files are resized before they are saved.">
-              <Input
+              <input
                 type="file"
                 accept="image/*"
+                className="sr-only"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   event.target.value = "";
-                  if (!file) return;
-                  if (file.size > 8_000_000) {
-                    toast.error("Use a photo under 8 MB.");
-                    return;
-                  }
-                  void readProductPhoto(file)
-                    .then((imageUrl) => setDraft({ ...draft, imageUrl }))
-                    .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not read that photo."));
+                  if (file) onPhoto(file);
                 }}
               />
-            </Field>
-            <Field label="Name">
-              <Input value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} required />
-            </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="SKU">
-                <Input value={draft.sku} onChange={(event) => setDraft({ ...draft, sku: event.target.value })} required />
-              </Field>
-              <Field label="Price (USD)">
-                <Input value={dollars} onChange={(event) => setDollars(event.target.value)} inputMode="decimal" required />
+            </label>
+          </Panel>
+          <Panel>
+            <h2 className="text-sm font-semibold">Pricing</h2>
+            <div className="mt-3 max-w-xs">
+              <Field label="Price">
+                <Input value={dollars} onChange={(event) => onDollars(event.target.value)} inputMode="decimal" placeholder="0.00" required />
               </Field>
             </div>
+          </Panel>
+          <Panel>
+            <h2 className="text-sm font-semibold">Inventory</h2>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="SKU">
+                <Input value={draft.sku} onChange={(event) => onChange({ ...draft, sku: event.target.value })} required />
+              </Field>
+              <Field label="Quantity">
+                <Input value={stock} onChange={(event) => onStock(event.target.value)} inputMode="numeric" required />
+              </Field>
+            </div>
+          </Panel>
+          <Panel>
+            <h2 className="text-sm font-semibold">Specifications</h2>
+            <div className="mt-3">
+              <Textarea value={draft.specs} onChange={(event) => onChange({ ...draft, specs: event.target.value })} placeholder="Display, memory, ports, warranty." />
+            </div>
+          </Panel>
+        </div>
+        <div className="grid gap-4">
+          <Panel>
+            <h2 className="text-sm font-semibold">Status</h2>
+            <div className="mt-3">
+              <Select value={draft.available ? "active" : "draft"} onChange={(event) => onChange({ ...draft, available: event.target.value === "active" })}>
+                <option value="active">Active</option>
+                <option value="draft">Draft</option>
+              </Select>
+            </div>
+          </Panel>
+          <Panel className="grid gap-3">
+            <h2 className="text-sm font-semibold">Product organization</h2>
             <Field label="Category">
-              <Select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}>
+              <Select value={draft.category} onChange={(event) => onChange({ ...draft, category: event.target.value })}>
                 {CATEGORIES.map((item) => (
                   <option key={item} value={item}>
                     {item}
@@ -387,32 +600,15 @@ function ProductsPage() {
                 ))}
               </Select>
             </Field>
-            <Field label="Description">
-              <Textarea value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} />
-            </Field>
-            <Field label="Specifications">
-              <Textarea value={draft.specs} onChange={(event) => setDraft({ ...draft, specs: event.target.value })} />
-            </Field>
-            <Field label="Who can order it">
-              <Select value={draft.visibility} onChange={(event) => setDraft({ ...draft, visibility: event.target.value })}>
-                <option value="all">Everyone</option>
+            <Field label="Sales channel">
+              <Select value={draft.visibility} onChange={(event) => onChange({ ...draft, visibility: event.target.value })}>
+                <option value="all">Online store</option>
                 <option value="authorized">Authorized customers only</option>
               </Select>
             </Field>
-            <Toggle checked={draft.available} onCheckedChange={(available) => setDraft({ ...draft, available })} label="Available to order" />
-            <div className="flex flex-wrap gap-2">
-              <Button type="submit" disabled={save.isPending}>
-                {save.isPending ? "Saving" : draft.id ? "Save product" : "Create product"}
-              </Button>
-              {draft.id ? (
-                <Button type="button" variant="danger" onClick={() => remove.mutate(draft.id)}>
-                  Remove
-                </Button>
-              ) : null}
-            </div>
-          </form>
-        ) : null}
-      </Modal>
-    </div>
+          </Panel>
+        </div>
+      </div>
+    </form>
   );
 }

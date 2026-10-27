@@ -25,9 +25,9 @@ function DashboardPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Manage Tech Service"
+        eyebrow="Operations"
         title="Admin"
-        description="Companies, the ticket queue, the catalog, and orders."
+        description="Live counts for the desk. Tickets, orders, companies, and people stay in sync with the sidebar."
         actions={
           <>
             <Link to="/tickets" search={ticketSearch()} className="inline-flex h-8 items-center rounded-lg bg-ink px-3 text-[13px] font-semibold text-white">
@@ -40,18 +40,24 @@ function DashboardPage() {
         }
       />
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
-          <Panel key={stat.label} className="p-4">
-            <p className="text-sm text-muted">{stat.label}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">{stat.value}</p>
-            {stat.hint ? <p className="mt-1 text-xs text-muted">{stat.hint}</p> : null}
-            {"to" in stat && stat.to ? (
-              <Link to={stat.to} className="mt-3 inline-block text-sm text-accent">
-                View
-              </Link>
-            ) : null}
-          </Panel>
-        ))}
+        {stats.map((stat) => {
+          const body = (
+            <>
+              <p className="text-xs font-semibold tracking-[0.12em] text-subtle uppercase">{stat.label}</p>
+              <p className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{stat.value}</p>
+              {stat.hint ? <p className="mt-1 text-xs text-muted">{stat.hint}</p> : null}
+            </>
+          );
+          return "to" in stat && stat.to ? (
+            <Link key={stat.label} to={stat.to} className="rounded-xl border border-line bg-surface p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)] hover:border-line-strong">
+              {body}
+            </Link>
+          ) : (
+            <Panel key={stat.label} className="p-4">
+              {body}
+            </Panel>
+          );
+        })}
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-4">
         {(

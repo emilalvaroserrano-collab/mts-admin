@@ -1,0 +1,160 @@
+{
+  "hash": "9bce53b4",
+  "configHash": "0afeec3a",
+  "lockfileHash": "edf55a80",
+  "browserHash": "d52a01be",
+  "optimized": {
+    "@electric-sql/pglite": {
+      "src": "../../../node_modules/@electric-sql/pglite/dist/index.js",
+      "file": "@electric-sql_pglite.js",
+      "fileHash": "3b2d0447",
+      "needsInterop": false
+    },
+    "@radix-ui/react-dialog": {
+      "src": "../../../node_modules/@radix-ui/react-dialog/dist/index.mjs",
+      "file": "@radix-ui_react-dialog.js",
+      "fileHash": "7ae5f9aa",
+      "needsInterop": false
+    },
+    "@radix-ui/react-switch": {
+      "src": "../../../node_modules/@radix-ui/react-switch/dist/index.mjs",
+      "file": "@radix-ui_react-switch.js",
+      "fileHash": "84a514b8",
+      "needsInterop": false
+    },
+    "@tanstack/react-query": {
+      "src": "../../../node_modules/@tanstack/react-query/build/modern/index.js",
+      "file": "@tanstack_react-query.js",
+      "fileHash": "933b6f90",
+      "needsInterop": false
+    },
+    "@tanstack/react-router > @tanstack/react-store": {
+      "src": "../../../node_modules/@tanstack/react-store/dist/index.js",
+      "file": "@tanstack_react-router_n_@tanstack_react-store.js",
+      "fileHash": "0c23db14",
+      "needsInterop": false
+    },
+    "class-variance-authority": {
+      "src": "../../../node_modules/class-variance-authority/dist/index.mjs",
+      "file": "class-variance-authority.js",
+      "fileHash": "d458cf5c",
+      "needsInterop": false
+    },
+    "clsx": {
+      "src": "../../../node_modules/clsx/dist/clsx.mjs",
+      "file": "clsx.js",
+      "fileHash": "0f8e23d6",
+      "needsInterop": false
+    },
+    "date-fns": {
+      "src": "../../../node_modules/date-fns/index.js",
+      "file": "date-fns.js",
+      "fileHash": "b4fd302f",
+      "needsInterop": false
+    },
+    "jose": {
+      "src": "../../../node_modules/jose/dist/webapi/index.js",
+      "file": "jose.js",
+      "fileHash": "f9c3dece",
+      "needsInterop": false
+    },
+    "kysely": {
+      "src": "../../../node_modules/kysely/dist/esm/index.js",
+      "file": "kysely.js",
+      "fileHash": "5810060b",
+      "needsInterop": false
+    },
+    "lucide-react": {
+      "src": "../../../node_modules/lucide-react/dist/esm/lucide-react.js",
+      "file": "lucide-react.js",
+      "fileHash": "ce822306",
+      "needsInterop": false
+    },
+    "pg": {
+      "src": "../../../node_modules/pg/esm/index.mjs",
+      "file": "pg.js",
+      "fileHash": "d435ec18",
+      "needsInterop": false
+    },
+    "react-dom": {
+      "src": "../../../node_modules/react-dom/index.js",
+      "file": "react-dom.js",
+      "fileHash": "1b70871f",
+      "needsInterop": true
+    },
+    "react-dom/client": {
+      "src": "../../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "f2ad1f64",
+      "needsInterop": true
+    },
+    "react": {
+      "src": "../../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "55a7728e",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "608090e0",
+      "needsInterop": true
+    },
+    "react/jsx-runtime": {
+      "src": "../../../node_modules/react/jsx-runtime.js",
+      "file": "react_jsx-runtime.js",
+      "fileHash": "604b977b",
+      "needsInterop": true
+    },
+    "sonner": {
+      "src": "../../../node_modules/sonner/dist/index.mjs",
+      "file": "sonner.js",
+      "fileHash": "fa5c7b85",
+      "needsInterop": false
+    },
+    "tailwind-merge": {
+      "src": "../../../node_modules/tailwind-merge/dist/bundle-mjs.mjs",
+      "file": "tailwind-merge.js",
+      "fileHash": "2284c0f4",
+      "needsInterop": false
+    },
+    "xlsx": {
+      "src": "../../../node_modules/xlsx/xlsx.mjs",
+      "file": "xlsx.js",
+      "fileHash": "0cb3ff37",
+      "needsInterop": false
+    },
+    "zod": {
+      "src": "../../../node_modules/zod/index.js",
+      "file": "zod.js",
+      "fileHash": "304729e8",
+      "needsInterop": false
+    }
+  },
+  "chunks": {
+    "__vite-browser-external-BpGc6UzH": {
+      "file": "__vite-browser-external-BpGc6UzH.js",
+      "isDynamicEntry": true
+    },
+    "chunk-DDJLRBDX-OKIa53rY": {
+      "file": "chunk-DDJLRBDX-OKIa53rY.js",
+      "isDynamicEntry": false
+    },
+    "dist-BKabNY_r": {
+      "file": "dist-BKabNY_r.js",
+      "isDynamicEntry": false
+    },
+    "nodefs-DQls3jMh": {
+      "file": "nodefs-DQls3jMh.js",
+      "isDynamicEntry": true
+    },
+    "opfs-ahp-D0iYrGI8": {
+      "file": "opfs-ahp-D0iYrGI8.js",
+      "isDynamicEntry": true
+    },
+    "rolldown-runtime-DC62tzP2": {
+      "file": "rolldown-runtime-DC62tzP2.js",
+      "isDynamicEntry": false
+    }
+  }
+}
