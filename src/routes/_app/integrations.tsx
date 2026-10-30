@@ -85,7 +85,7 @@ function IntegrationPage() {
   const locked = data.fromEnv;
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Connection"
         title="Zendesk"

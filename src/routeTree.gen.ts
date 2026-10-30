@@ -12,15 +12,35 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SplatRouteImport } from './routes/$'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppAccessRouteImport } from './routes/_app/access'
+import { Route as AppCampaignsRouteImport } from './routes/_app/campaigns'
+import { Route as AppDocsRouteImport } from './routes/_app/docs'
 import { Route as AppFormsRouteImport } from './routes/_app/forms'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppPaymentsRouteImport } from './routes/_app/payments'
 import { Route as AppProductsRouteImport } from './routes/_app/products'
 import { Route as AppRolesRouteImport } from './routes/_app/roles'
+import { Route as AppServicesRouteImport } from './routes/_app/services'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
 import { Route as AuthPopupRouteImport } from './routes/auth/popup'
+import { Route as PortalIndexRouteImport } from './routes/portal/index'
+import { Route as PortalAccountRouteImport } from './routes/portal/account'
+import { Route as PortalBillingRouteImport } from './routes/portal/billing'
+import { Route as PortalCampaignsRouteImport } from './routes/portal/campaigns'
+import { Route as PortalComplaintsRouteImport } from './routes/portal/complaints'
+import { Route as PortalLoginRouteImport } from './routes/portal/login'
+import { Route as PortalMyServicesRouteImport } from './routes/portal/my-services'
+import { Route as PortalNotificationsRouteImport } from './routes/portal/notifications'
+import { Route as PortalOrganizationRouteImport } from './routes/portal/organization'
+import { Route as PortalQuotesRouteImport } from './routes/portal/quotes'
+import { Route as PortalRegisterRouteImport } from './routes/portal/register'
+import { Route as PortalShopRouteImport } from './routes/portal/shop'
+import { Route as PortalVerifyRouteImport } from './routes/portal/verify'
+import { Route as AppNotificationsIndexRouteImport } from './routes/_app/notifications/index'
+import { Route as AppNotificationsNotificationIdRouteImport } from './routes/_app/notifications/$notificationId'
 import { Route as AppOrdersIndexRouteImport } from './routes/_app/orders/index'
 import { Route as AppOrdersOrderIdRouteImport } from './routes/_app/orders/$orderId'
 import { Route as AppOrganizationsIndexRouteImport } from './routes/_app/organizations/index'
@@ -31,10 +51,19 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiJobsRunRouteImport } from './routes/api/jobs/run'
 import { Route as ApiPaymentsAlternativeRouteImport } from './routes/api/payments/alternative'
 import { Route as ApiZendeskWebhookRouteImport } from './routes/api/zendesk/webhook'
+import { Route as PortalOrdersIndexRouteImport } from './routes/portal/orders/index'
+import { Route as PortalOrdersOrderIdRouteImport } from './routes/portal/orders/$orderId'
+import { Route as PortalServicesIndexRouteImport } from './routes/portal/services/index'
+import { Route as PortalServicesServiceIdRouteImport } from './routes/portal/services/$serviceId'
+import { Route as PortalTicketsIndexRouteImport } from './routes/portal/tickets/index'
+import { Route as PortalTicketsTicketIdRouteImport } from './routes/portal/tickets/$ticketId'
+import { Route as PortalTicketsNewRouteImport } from './routes/portal/tickets/new'
 import { Route as StoreSlugIndexRouteImport } from './routes/store/$slug/index'
 import { Route as StoreSlugSkuRouteImport } from './routes/store/$slug/$sku'
 import { Route as StoreSlugAccountRouteImport } from './routes/store/$slug/account'
 import { Route as StoreSlugCheckoutRouteImport } from './routes/store/$slug/checkout'
+import { Route as StoreSlugServicesRouteImport } from './routes/store/$slug/services'
+import { Route as StoreSlugTicketsRouteImport } from './routes/store/$slug/tickets'
 
 const SplatRoute = SplatRouteImport.update({
   id: '/$',
@@ -50,9 +79,29 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalRoute = PortalRouteImport.update({
+  id: '/portal',
+  path: '/portal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAccessRoute = AppAccessRouteImport.update({
+  id: '/access',
+  path: '/access',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCampaignsRoute = AppCampaignsRouteImport.update({
+  id: '/campaigns',
+  path: '/campaigns',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDocsRoute = AppDocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFormsRoute = AppFormsRouteImport.update({
@@ -80,6 +129,11 @@ const AppRolesRoute = AppRolesRouteImport.update({
   path: '/roles',
   getParentRoute: () => AppRoute,
 } as any)
+const AppServicesRoute = AppServicesRouteImport.update({
+  id: '/services',
+  path: '/services',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
@@ -95,6 +149,82 @@ const AuthPopupRoute = AuthPopupRouteImport.update({
   path: '/auth/popup',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalIndexRoute = PortalIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalAccountRoute = PortalAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalBillingRoute = PortalBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalCampaignsRoute = PortalCampaignsRouteImport.update({
+  id: '/campaigns',
+  path: '/campaigns',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalComplaintsRoute = PortalComplaintsRouteImport.update({
+  id: '/complaints',
+  path: '/complaints',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalLoginRoute = PortalLoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalMyServicesRoute = PortalMyServicesRouteImport.update({
+  id: '/my-services',
+  path: '/my-services',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalNotificationsRoute = PortalNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalOrganizationRoute = PortalOrganizationRouteImport.update({
+  id: '/organization',
+  path: '/organization',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalQuotesRoute = PortalQuotesRouteImport.update({
+  id: '/quotes',
+  path: '/quotes',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalRegisterRoute = PortalRegisterRouteImport.update({
+  id: '/register',
+  path: '/register',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalShopRoute = PortalShopRouteImport.update({
+  id: '/shop',
+  path: '/shop',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalVerifyRoute = PortalVerifyRouteImport.update({
+  id: '/verify',
+  path: '/verify',
+  getParentRoute: () => PortalRoute,
+} as any)
+const AppNotificationsIndexRoute = AppNotificationsIndexRouteImport.update({
+  id: '/notifications/',
+  path: '/notifications/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificationsNotificationIdRoute =
+  AppNotificationsNotificationIdRouteImport.update({
+    id: '/notifications/$notificationId',
+    path: '/notifications/$notificationId',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppOrdersIndexRoute = AppOrdersIndexRouteImport.update({
   id: '/orders/',
   path: '/orders/',
@@ -145,6 +275,41 @@ const ApiZendeskWebhookRoute = ApiZendeskWebhookRouteImport.update({
   path: '/api/zendesk/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PortalOrdersIndexRoute = PortalOrdersIndexRouteImport.update({
+  id: '/orders/',
+  path: '/orders/',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalOrdersOrderIdRoute = PortalOrdersOrderIdRouteImport.update({
+  id: '/orders/$orderId',
+  path: '/orders/$orderId',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalServicesIndexRoute = PortalServicesIndexRouteImport.update({
+  id: '/services/',
+  path: '/services/',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalServicesServiceIdRoute = PortalServicesServiceIdRouteImport.update({
+  id: '/services/$serviceId',
+  path: '/services/$serviceId',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalTicketsIndexRoute = PortalTicketsIndexRouteImport.update({
+  id: '/tickets/',
+  path: '/tickets/',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalTicketsTicketIdRoute = PortalTicketsTicketIdRouteImport.update({
+  id: '/tickets/$ticketId',
+  path: '/tickets/$ticketId',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalTicketsNewRoute = PortalTicketsNewRouteImport.update({
+  id: '/tickets/new',
+  path: '/tickets/new',
+  getParentRoute: () => PortalRoute,
+} as any)
 const StoreSlugIndexRoute = StoreSlugIndexRouteImport.update({
   id: '/store/$slug/',
   path: '/store/$slug/',
@@ -165,19 +330,48 @@ const StoreSlugCheckoutRoute = StoreSlugCheckoutRouteImport.update({
   path: '/store/$slug/checkout',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StoreSlugServicesRoute = StoreSlugServicesRouteImport.update({
+  id: '/store/$slug/services',
+  path: '/store/$slug/services',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoreSlugTicketsRoute = StoreSlugTicketsRouteImport.update({
+  id: '/store/$slug/tickets',
+  path: '/store/$slug/tickets',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/$': typeof SplatRoute
   '/': typeof AppIndexRoute
   '/login': typeof LoginRoute
+  '/portal': typeof PortalRouteWithChildren
+  '/access': typeof AppAccessRoute
+  '/campaigns': typeof AppCampaignsRoute
+  '/docs': typeof AppDocsRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
   '/payments': typeof AppPaymentsRoute
   '/products': typeof AppProductsRoute
   '/roles': typeof AppRolesRoute
+  '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
   '/auth/popup': typeof AuthPopupRoute
+  '/portal/account': typeof PortalAccountRoute
+  '/portal/billing': typeof PortalBillingRoute
+  '/portal/campaigns': typeof PortalCampaignsRoute
+  '/portal/complaints': typeof PortalComplaintsRoute
+  '/portal/login': typeof PortalLoginRoute
+  '/portal/my-services': typeof PortalMyServicesRoute
+  '/portal/notifications': typeof PortalNotificationsRoute
+  '/portal/organization': typeof PortalOrganizationRoute
+  '/portal/quotes': typeof PortalQuotesRoute
+  '/portal/register': typeof PortalRegisterRoute
+  '/portal/shop': typeof PortalShopRoute
+  '/portal/verify': typeof PortalVerifyRoute
+  '/portal/': typeof PortalIndexRoute
+  '/notifications/$notificationId': typeof AppNotificationsNotificationIdRoute
   '/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
@@ -185,26 +379,54 @@ export interface FileRoutesByFullPath {
   '/api/jobs/run': typeof ApiJobsRunRoute
   '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
   '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
+  '/portal/orders/$orderId': typeof PortalOrdersOrderIdRoute
+  '/portal/services/$serviceId': typeof PortalServicesServiceIdRoute
+  '/portal/tickets/$ticketId': typeof PortalTicketsTicketIdRoute
+  '/portal/tickets/new': typeof PortalTicketsNewRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
+  '/store/$slug/services': typeof StoreSlugServicesRoute
+  '/store/$slug/tickets': typeof StoreSlugTicketsRoute
+  '/notifications/': typeof AppNotificationsIndexRoute
   '/orders/': typeof AppOrdersIndexRoute
   '/organizations/': typeof AppOrganizationsIndexRoute
   '/tickets/': typeof AppTicketsIndexRoute
+  '/portal/orders/': typeof PortalOrdersIndexRoute
+  '/portal/services/': typeof PortalServicesIndexRoute
+  '/portal/tickets/': typeof PortalTicketsIndexRoute
   '/store/$slug/': typeof StoreSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/$': typeof SplatRoute
   '/login': typeof LoginRoute
+  '/access': typeof AppAccessRoute
+  '/campaigns': typeof AppCampaignsRoute
+  '/docs': typeof AppDocsRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
   '/payments': typeof AppPaymentsRoute
   '/products': typeof AppProductsRoute
   '/roles': typeof AppRolesRoute
+  '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
   '/auth/popup': typeof AuthPopupRoute
+  '/portal/account': typeof PortalAccountRoute
+  '/portal/billing': typeof PortalBillingRoute
+  '/portal/campaigns': typeof PortalCampaignsRoute
+  '/portal/complaints': typeof PortalComplaintsRoute
+  '/portal/login': typeof PortalLoginRoute
+  '/portal/my-services': typeof PortalMyServicesRoute
+  '/portal/notifications': typeof PortalNotificationsRoute
+  '/portal/organization': typeof PortalOrganizationRoute
+  '/portal/quotes': typeof PortalQuotesRoute
+  '/portal/register': typeof PortalRegisterRoute
+  '/portal/shop': typeof PortalShopRoute
+  '/portal/verify': typeof PortalVerifyRoute
   '/': typeof AppIndexRoute
+  '/portal': typeof PortalIndexRoute
+  '/notifications/$notificationId': typeof AppNotificationsNotificationIdRoute
   '/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
@@ -212,12 +434,22 @@ export interface FileRoutesByTo {
   '/api/jobs/run': typeof ApiJobsRunRoute
   '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
   '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
+  '/portal/orders/$orderId': typeof PortalOrdersOrderIdRoute
+  '/portal/services/$serviceId': typeof PortalServicesServiceIdRoute
+  '/portal/tickets/$ticketId': typeof PortalTicketsTicketIdRoute
+  '/portal/tickets/new': typeof PortalTicketsNewRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
+  '/store/$slug/services': typeof StoreSlugServicesRoute
+  '/store/$slug/tickets': typeof StoreSlugTicketsRoute
+  '/notifications': typeof AppNotificationsIndexRoute
   '/orders': typeof AppOrdersIndexRoute
   '/organizations': typeof AppOrganizationsIndexRoute
   '/tickets': typeof AppTicketsIndexRoute
+  '/portal/orders': typeof PortalOrdersIndexRoute
+  '/portal/services': typeof PortalServicesIndexRoute
+  '/portal/tickets': typeof PortalTicketsIndexRoute
   '/store/$slug': typeof StoreSlugIndexRoute
 }
 export interface FileRoutesById {
@@ -225,15 +457,34 @@ export interface FileRoutesById {
   '/$': typeof SplatRoute
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
+  '/portal': typeof PortalRouteWithChildren
+  '/_app/access': typeof AppAccessRoute
+  '/_app/campaigns': typeof AppCampaignsRoute
+  '/_app/docs': typeof AppDocsRoute
   '/_app/forms': typeof AppFormsRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/payments': typeof AppPaymentsRoute
   '/_app/products': typeof AppProductsRoute
   '/_app/roles': typeof AppRolesRoute
+  '/_app/services': typeof AppServicesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/users': typeof AppUsersRoute
   '/auth/popup': typeof AuthPopupRoute
+  '/portal/account': typeof PortalAccountRoute
+  '/portal/billing': typeof PortalBillingRoute
+  '/portal/campaigns': typeof PortalCampaignsRoute
+  '/portal/complaints': typeof PortalComplaintsRoute
+  '/portal/login': typeof PortalLoginRoute
+  '/portal/my-services': typeof PortalMyServicesRoute
+  '/portal/notifications': typeof PortalNotificationsRoute
+  '/portal/organization': typeof PortalOrganizationRoute
+  '/portal/quotes': typeof PortalQuotesRoute
+  '/portal/register': typeof PortalRegisterRoute
+  '/portal/shop': typeof PortalShopRoute
+  '/portal/verify': typeof PortalVerifyRoute
   '/_app/': typeof AppIndexRoute
+  '/portal/': typeof PortalIndexRoute
+  '/_app/notifications/$notificationId': typeof AppNotificationsNotificationIdRoute
   '/_app/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/_app/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/_app/tickets/$ticketId': typeof AppTicketsTicketIdRoute
@@ -241,12 +492,22 @@ export interface FileRoutesById {
   '/api/jobs/run': typeof ApiJobsRunRoute
   '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
   '/api/zendesk/webhook': typeof ApiZendeskWebhookRoute
+  '/portal/orders/$orderId': typeof PortalOrdersOrderIdRoute
+  '/portal/services/$serviceId': typeof PortalServicesServiceIdRoute
+  '/portal/tickets/$ticketId': typeof PortalTicketsTicketIdRoute
+  '/portal/tickets/new': typeof PortalTicketsNewRoute
   '/store/$slug/$sku': typeof StoreSlugSkuRoute
   '/store/$slug/account': typeof StoreSlugAccountRoute
   '/store/$slug/checkout': typeof StoreSlugCheckoutRoute
+  '/store/$slug/services': typeof StoreSlugServicesRoute
+  '/store/$slug/tickets': typeof StoreSlugTicketsRoute
+  '/_app/notifications/': typeof AppNotificationsIndexRoute
   '/_app/orders/': typeof AppOrdersIndexRoute
   '/_app/organizations/': typeof AppOrganizationsIndexRoute
   '/_app/tickets/': typeof AppTicketsIndexRoute
+  '/portal/orders/': typeof PortalOrdersIndexRoute
+  '/portal/services/': typeof PortalServicesIndexRoute
+  '/portal/tickets/': typeof PortalTicketsIndexRoute
   '/store/$slug/': typeof StoreSlugIndexRoute
 }
 export interface FileRouteTypes {
@@ -255,14 +516,33 @@ export interface FileRouteTypes {
     | '/$'
     | '/'
     | '/login'
+    | '/portal'
+    | '/access'
+    | '/campaigns'
+    | '/docs'
     | '/forms'
     | '/integrations'
     | '/payments'
     | '/products'
     | '/roles'
+    | '/services'
     | '/settings'
     | '/users'
     | '/auth/popup'
+    | '/portal/account'
+    | '/portal/billing'
+    | '/portal/campaigns'
+    | '/portal/complaints'
+    | '/portal/login'
+    | '/portal/my-services'
+    | '/portal/notifications'
+    | '/portal/organization'
+    | '/portal/quotes'
+    | '/portal/register'
+    | '/portal/shop'
+    | '/portal/verify'
+    | '/portal/'
+    | '/notifications/$notificationId'
     | '/orders/$orderId'
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
@@ -270,26 +550,54 @@ export interface FileRouteTypes {
     | '/api/jobs/run'
     | '/api/payments/alternative'
     | '/api/zendesk/webhook'
+    | '/portal/orders/$orderId'
+    | '/portal/services/$serviceId'
+    | '/portal/tickets/$ticketId'
+    | '/portal/tickets/new'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
     | '/store/$slug/checkout'
+    | '/store/$slug/services'
+    | '/store/$slug/tickets'
+    | '/notifications/'
     | '/orders/'
     | '/organizations/'
     | '/tickets/'
+    | '/portal/orders/'
+    | '/portal/services/'
+    | '/portal/tickets/'
     | '/store/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/$'
     | '/login'
+    | '/access'
+    | '/campaigns'
+    | '/docs'
     | '/forms'
     | '/integrations'
     | '/payments'
     | '/products'
     | '/roles'
+    | '/services'
     | '/settings'
     | '/users'
     | '/auth/popup'
+    | '/portal/account'
+    | '/portal/billing'
+    | '/portal/campaigns'
+    | '/portal/complaints'
+    | '/portal/login'
+    | '/portal/my-services'
+    | '/portal/notifications'
+    | '/portal/organization'
+    | '/portal/quotes'
+    | '/portal/register'
+    | '/portal/shop'
+    | '/portal/verify'
     | '/'
+    | '/portal'
+    | '/notifications/$notificationId'
     | '/orders/$orderId'
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
@@ -297,27 +605,56 @@ export interface FileRouteTypes {
     | '/api/jobs/run'
     | '/api/payments/alternative'
     | '/api/zendesk/webhook'
+    | '/portal/orders/$orderId'
+    | '/portal/services/$serviceId'
+    | '/portal/tickets/$ticketId'
+    | '/portal/tickets/new'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
     | '/store/$slug/checkout'
+    | '/store/$slug/services'
+    | '/store/$slug/tickets'
+    | '/notifications'
     | '/orders'
     | '/organizations'
     | '/tickets'
+    | '/portal/orders'
+    | '/portal/services'
+    | '/portal/tickets'
     | '/store/$slug'
   id:
     | '__root__'
     | '/$'
     | '/_app'
     | '/login'
+    | '/portal'
+    | '/_app/access'
+    | '/_app/campaigns'
+    | '/_app/docs'
     | '/_app/forms'
     | '/_app/integrations'
     | '/_app/payments'
     | '/_app/products'
     | '/_app/roles'
+    | '/_app/services'
     | '/_app/settings'
     | '/_app/users'
     | '/auth/popup'
+    | '/portal/account'
+    | '/portal/billing'
+    | '/portal/campaigns'
+    | '/portal/complaints'
+    | '/portal/login'
+    | '/portal/my-services'
+    | '/portal/notifications'
+    | '/portal/organization'
+    | '/portal/quotes'
+    | '/portal/register'
+    | '/portal/shop'
+    | '/portal/verify'
     | '/_app/'
+    | '/portal/'
+    | '/_app/notifications/$notificationId'
     | '/_app/orders/$orderId'
     | '/_app/organizations/$orgId'
     | '/_app/tickets/$ticketId'
@@ -325,12 +662,22 @@ export interface FileRouteTypes {
     | '/api/jobs/run'
     | '/api/payments/alternative'
     | '/api/zendesk/webhook'
+    | '/portal/orders/$orderId'
+    | '/portal/services/$serviceId'
+    | '/portal/tickets/$ticketId'
+    | '/portal/tickets/new'
     | '/store/$slug/$sku'
     | '/store/$slug/account'
     | '/store/$slug/checkout'
+    | '/store/$slug/services'
+    | '/store/$slug/tickets'
+    | '/_app/notifications/'
     | '/_app/orders/'
     | '/_app/organizations/'
     | '/_app/tickets/'
+    | '/portal/orders/'
+    | '/portal/services/'
+    | '/portal/tickets/'
     | '/store/$slug/'
   fileRoutesById: FileRoutesById
 }
@@ -338,6 +685,7 @@ export interface RootRouteChildren {
   SplatRoute: typeof SplatRoute
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  PortalRoute: typeof PortalRouteWithChildren
   AuthPopupRoute: typeof AuthPopupRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiJobsRunRoute: typeof ApiJobsRunRoute
@@ -346,6 +694,8 @@ export interface RootRouteChildren {
   StoreSlugSkuRoute: typeof StoreSlugSkuRoute
   StoreSlugAccountRoute: typeof StoreSlugAccountRoute
   StoreSlugCheckoutRoute: typeof StoreSlugCheckoutRoute
+  StoreSlugServicesRoute: typeof StoreSlugServicesRoute
+  StoreSlugTicketsRoute: typeof StoreSlugTicketsRoute
   StoreSlugIndexRoute: typeof StoreSlugIndexRoute
 }
 
@@ -372,11 +722,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal': {
+      id: '/portal'
+      path: '/portal'
+      fullPath: '/portal'
+      preLoaderRoute: typeof PortalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/': {
       id: '/_app/'
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/access': {
+      id: '/_app/access'
+      path: '/access'
+      fullPath: '/access'
+      preLoaderRoute: typeof AppAccessRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/campaigns': {
+      id: '/_app/campaigns'
+      path: '/campaigns'
+      fullPath: '/campaigns'
+      preLoaderRoute: typeof AppCampaignsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/docs': {
+      id: '/_app/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof AppDocsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/forms': {
@@ -414,6 +792,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRolesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/services': {
+      id: '/_app/services'
+      path: '/services'
+      fullPath: '/services'
+      preLoaderRoute: typeof AppServicesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
@@ -434,6 +819,111 @@ declare module '@tanstack/react-router' {
       fullPath: '/auth/popup'
       preLoaderRoute: typeof AuthPopupRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/portal/': {
+      id: '/portal/'
+      path: '/'
+      fullPath: '/portal/'
+      preLoaderRoute: typeof PortalIndexRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/account': {
+      id: '/portal/account'
+      path: '/account'
+      fullPath: '/portal/account'
+      preLoaderRoute: typeof PortalAccountRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/billing': {
+      id: '/portal/billing'
+      path: '/billing'
+      fullPath: '/portal/billing'
+      preLoaderRoute: typeof PortalBillingRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/campaigns': {
+      id: '/portal/campaigns'
+      path: '/campaigns'
+      fullPath: '/portal/campaigns'
+      preLoaderRoute: typeof PortalCampaignsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/complaints': {
+      id: '/portal/complaints'
+      path: '/complaints'
+      fullPath: '/portal/complaints'
+      preLoaderRoute: typeof PortalComplaintsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/login': {
+      id: '/portal/login'
+      path: '/login'
+      fullPath: '/portal/login'
+      preLoaderRoute: typeof PortalLoginRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/my-services': {
+      id: '/portal/my-services'
+      path: '/my-services'
+      fullPath: '/portal/my-services'
+      preLoaderRoute: typeof PortalMyServicesRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/notifications': {
+      id: '/portal/notifications'
+      path: '/notifications'
+      fullPath: '/portal/notifications'
+      preLoaderRoute: typeof PortalNotificationsRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/organization': {
+      id: '/portal/organization'
+      path: '/organization'
+      fullPath: '/portal/organization'
+      preLoaderRoute: typeof PortalOrganizationRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/quotes': {
+      id: '/portal/quotes'
+      path: '/quotes'
+      fullPath: '/portal/quotes'
+      preLoaderRoute: typeof PortalQuotesRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/register': {
+      id: '/portal/register'
+      path: '/register'
+      fullPath: '/portal/register'
+      preLoaderRoute: typeof PortalRegisterRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/shop': {
+      id: '/portal/shop'
+      path: '/shop'
+      fullPath: '/portal/shop'
+      preLoaderRoute: typeof PortalShopRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/verify': {
+      id: '/portal/verify'
+      path: '/verify'
+      fullPath: '/portal/verify'
+      preLoaderRoute: typeof PortalVerifyRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/_app/notifications/': {
+      id: '/_app/notifications/'
+      path: '/notifications'
+      fullPath: '/notifications/'
+      preLoaderRoute: typeof AppNotificationsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notifications/$notificationId': {
+      id: '/_app/notifications/$notificationId'
+      path: '/notifications/$notificationId'
+      fullPath: '/notifications/$notificationId'
+      preLoaderRoute: typeof AppNotificationsNotificationIdRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/orders/': {
       id: '/_app/orders/'
@@ -505,6 +995,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiZendeskWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/portal/orders/': {
+      id: '/portal/orders/'
+      path: '/orders'
+      fullPath: '/portal/orders/'
+      preLoaderRoute: typeof PortalOrdersIndexRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/orders/$orderId': {
+      id: '/portal/orders/$orderId'
+      path: '/orders/$orderId'
+      fullPath: '/portal/orders/$orderId'
+      preLoaderRoute: typeof PortalOrdersOrderIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/services/': {
+      id: '/portal/services/'
+      path: '/services'
+      fullPath: '/portal/services/'
+      preLoaderRoute: typeof PortalServicesIndexRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/services/$serviceId': {
+      id: '/portal/services/$serviceId'
+      path: '/services/$serviceId'
+      fullPath: '/portal/services/$serviceId'
+      preLoaderRoute: typeof PortalServicesServiceIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/tickets/': {
+      id: '/portal/tickets/'
+      path: '/tickets'
+      fullPath: '/portal/tickets/'
+      preLoaderRoute: typeof PortalTicketsIndexRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/tickets/$ticketId': {
+      id: '/portal/tickets/$ticketId'
+      path: '/tickets/$ticketId'
+      fullPath: '/portal/tickets/$ticketId'
+      preLoaderRoute: typeof PortalTicketsTicketIdRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/tickets/new': {
+      id: '/portal/tickets/new'
+      path: '/tickets/new'
+      fullPath: '/portal/tickets/new'
+      preLoaderRoute: typeof PortalTicketsNewRouteImport
+      parentRoute: typeof PortalRoute
+    }
     '/store/$slug/': {
       id: '/store/$slug/'
       path: '/store/$slug'
@@ -533,38 +1072,64 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StoreSlugCheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/store/$slug/services': {
+      id: '/store/$slug/services'
+      path: '/store/$slug/services'
+      fullPath: '/store/$slug/services'
+      preLoaderRoute: typeof StoreSlugServicesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/store/$slug/tickets': {
+      id: '/store/$slug/tickets'
+      path: '/store/$slug/tickets'
+      fullPath: '/store/$slug/tickets'
+      preLoaderRoute: typeof StoreSlugTicketsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppAccessRoute: typeof AppAccessRoute
+  AppCampaignsRoute: typeof AppCampaignsRoute
+  AppDocsRoute: typeof AppDocsRoute
   AppFormsRoute: typeof AppFormsRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppPaymentsRoute: typeof AppPaymentsRoute
   AppProductsRoute: typeof AppProductsRoute
   AppRolesRoute: typeof AppRolesRoute
+  AppServicesRoute: typeof AppServicesRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppUsersRoute: typeof AppUsersRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppNotificationsNotificationIdRoute: typeof AppNotificationsNotificationIdRoute
   AppOrdersOrderIdRoute: typeof AppOrdersOrderIdRoute
   AppOrganizationsOrgIdRoute: typeof AppOrganizationsOrgIdRoute
   AppTicketsTicketIdRoute: typeof AppTicketsTicketIdRoute
+  AppNotificationsIndexRoute: typeof AppNotificationsIndexRoute
   AppOrdersIndexRoute: typeof AppOrdersIndexRoute
   AppOrganizationsIndexRoute: typeof AppOrganizationsIndexRoute
   AppTicketsIndexRoute: typeof AppTicketsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAccessRoute: AppAccessRoute,
+  AppCampaignsRoute: AppCampaignsRoute,
+  AppDocsRoute: AppDocsRoute,
   AppFormsRoute: AppFormsRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppPaymentsRoute: AppPaymentsRoute,
   AppProductsRoute: AppProductsRoute,
   AppRolesRoute: AppRolesRoute,
+  AppServicesRoute: AppServicesRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppUsersRoute: AppUsersRoute,
   AppIndexRoute: AppIndexRoute,
+  AppNotificationsNotificationIdRoute: AppNotificationsNotificationIdRoute,
   AppOrdersOrderIdRoute: AppOrdersOrderIdRoute,
   AppOrganizationsOrgIdRoute: AppOrganizationsOrgIdRoute,
   AppTicketsTicketIdRoute: AppTicketsTicketIdRoute,
+  AppNotificationsIndexRoute: AppNotificationsIndexRoute,
   AppOrdersIndexRoute: AppOrdersIndexRoute,
   AppOrganizationsIndexRoute: AppOrganizationsIndexRoute,
   AppTicketsIndexRoute: AppTicketsIndexRoute,
@@ -572,10 +1137,60 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface PortalRouteChildren {
+  PortalAccountRoute: typeof PortalAccountRoute
+  PortalBillingRoute: typeof PortalBillingRoute
+  PortalCampaignsRoute: typeof PortalCampaignsRoute
+  PortalComplaintsRoute: typeof PortalComplaintsRoute
+  PortalLoginRoute: typeof PortalLoginRoute
+  PortalMyServicesRoute: typeof PortalMyServicesRoute
+  PortalNotificationsRoute: typeof PortalNotificationsRoute
+  PortalOrganizationRoute: typeof PortalOrganizationRoute
+  PortalQuotesRoute: typeof PortalQuotesRoute
+  PortalRegisterRoute: typeof PortalRegisterRoute
+  PortalShopRoute: typeof PortalShopRoute
+  PortalVerifyRoute: typeof PortalVerifyRoute
+  PortalIndexRoute: typeof PortalIndexRoute
+  PortalOrdersOrderIdRoute: typeof PortalOrdersOrderIdRoute
+  PortalServicesServiceIdRoute: typeof PortalServicesServiceIdRoute
+  PortalTicketsTicketIdRoute: typeof PortalTicketsTicketIdRoute
+  PortalTicketsNewRoute: typeof PortalTicketsNewRoute
+  PortalOrdersIndexRoute: typeof PortalOrdersIndexRoute
+  PortalServicesIndexRoute: typeof PortalServicesIndexRoute
+  PortalTicketsIndexRoute: typeof PortalTicketsIndexRoute
+}
+
+const PortalRouteChildren: PortalRouteChildren = {
+  PortalAccountRoute: PortalAccountRoute,
+  PortalBillingRoute: PortalBillingRoute,
+  PortalCampaignsRoute: PortalCampaignsRoute,
+  PortalComplaintsRoute: PortalComplaintsRoute,
+  PortalLoginRoute: PortalLoginRoute,
+  PortalMyServicesRoute: PortalMyServicesRoute,
+  PortalNotificationsRoute: PortalNotificationsRoute,
+  PortalOrganizationRoute: PortalOrganizationRoute,
+  PortalQuotesRoute: PortalQuotesRoute,
+  PortalRegisterRoute: PortalRegisterRoute,
+  PortalShopRoute: PortalShopRoute,
+  PortalVerifyRoute: PortalVerifyRoute,
+  PortalIndexRoute: PortalIndexRoute,
+  PortalOrdersOrderIdRoute: PortalOrdersOrderIdRoute,
+  PortalServicesServiceIdRoute: PortalServicesServiceIdRoute,
+  PortalTicketsTicketIdRoute: PortalTicketsTicketIdRoute,
+  PortalTicketsNewRoute: PortalTicketsNewRoute,
+  PortalOrdersIndexRoute: PortalOrdersIndexRoute,
+  PortalServicesIndexRoute: PortalServicesIndexRoute,
+  PortalTicketsIndexRoute: PortalTicketsIndexRoute,
+}
+
+const PortalRouteWithChildren =
+  PortalRoute._addFileChildren(PortalRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   SplatRoute: SplatRoute,
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  PortalRoute: PortalRouteWithChildren,
   AuthPopupRoute: AuthPopupRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiJobsRunRoute: ApiJobsRunRoute,
@@ -584,6 +1199,8 @@ const rootRouteChildren: RootRouteChildren = {
   StoreSlugSkuRoute: StoreSlugSkuRoute,
   StoreSlugAccountRoute: StoreSlugAccountRoute,
   StoreSlugCheckoutRoute: StoreSlugCheckoutRoute,
+  StoreSlugServicesRoute: StoreSlugServicesRoute,
+  StoreSlugTicketsRoute: StoreSlugTicketsRoute,
   StoreSlugIndexRoute: StoreSlugIndexRoute,
 }
 export const routeTree = rootRouteImport

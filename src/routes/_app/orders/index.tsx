@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { createOrder, getPayments, getPeople, listOrders, listProducts } from "@/lib/portal/api";
 import { money, paymentLabel, shopifyDelivery, shopifyFulfillment, shopifyPayment, day, orderCustomer, orderEmail } from "@/lib/portal/format";
 import type { Order } from "@/lib/portal/types";
-import { Badge, Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, Textarea, errorText } from "@/components/ui";
+import { Badge, Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Select, Textarea, ViewSwitch, errorText, useViewMode } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/orders/")({
   component: OrdersPage,
@@ -36,6 +36,7 @@ function OrdersPage() {
   const [paymentMethod, setPaymentMethod] = useState("");
   const [lines, setLines] = useState<{ productId: number; name: string; quantity: number }[]>([]);
   const [view, setView] = useState("all");
+  const [layout, setLayout] = useViewMode("mts-orders-view", "grid");
   const navigate = useNavigate();
   const client = useQueryClient();
   const save = useMutation({
@@ -70,14 +71,17 @@ function OrdersPage() {
   const catalog = products.data?.filter((product) => product.available) ?? [];
 
   return (
-    <div>
+    <div className="grid gap-4">
+      <div className="w-full">
       <PageHeader
         eyebrow="Catalog"
         title="Orders"
         description="Payment, fulfillment, and delivery follow the current state of each order."
         actions={<Button onClick={() => setOpen(true)}>New order</Button>}
       />
-      <div className="mb-4 flex gap-2 overflow-x-auto">
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2 md:justify-between">
+        <div className="flex flex-wrap justify-center gap-2 md:justify-start">
         {[
           ["all", "All"],
           ["open", "Open"],
@@ -90,16 +94,65 @@ function OrdersPage() {
             key={id}
             type="button"
             onClick={() => setView(id)}
-            className={view === id ? "h-8 shrink-0 rounded-full bg-ink px-3 text-[13px] font-semibold text-white" : "h-8 shrink-0 rounded-full border border-line px-3 text-[13px] text-muted"}
+            className={view === id ? "h-11 shrink-0 rounded-full bg-ink px-4 text-[13px] font-semibold text-white" : "h-11 shrink-0 rounded-full border border-line bg-surface px-4 text-[13px] text-muted"}
           >
             {label}
           </button>
         ))}
+        </div>
+        <ViewSwitch mode={layout} onChange={setLayout} />
       </div>
       {query.isPending ? <Loading /> : null}
       {query.isError ? <ErrorNote message={query.error.message} /> : null}
       {query.data ? (
-        <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+        <>
+          <div className={layout === "grid" ? "grid w-full justify-items-center gap-3 sm:grid-cols-2 sm:justify-items-stretch xl:grid-cols-3" : "grid w-full gap-2 md:hidden"}>
+            {query.data.filter((order) => matchesView(order, view)).map((order) => {
+              const payment = shopifyPayment(order);
+              const fulfillment = shopifyFulfillment(order);
+              const delivery = shopifyDelivery(order);
+              return (
+                <Link
+                  key={order.id}
+                  to="/orders/$orderId"
+                  params={{ orderId: String(order.id) }}
+                  className={layout === "grid" ? "grid w-full max-w-md justify-items-center gap-3 rounded-2xl border border-line bg-surface p-4 text-center shadow-[0_1px_0_rgba(0,0,0,0.04)] sm:max-w-none sm:text-left sm:justify-items-stretch" : "grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3 text-left"}
+                >
+                  {layout === "grid" ? (
+                    <>
+                  <div className="grid justify-items-center gap-0.5 sm:justify-items-start">
+                    <p className="text-base font-semibold">{order.number}</p>
+                    <p className="text-xs text-muted">{order.organizationName}</p>
+                  </div>
+                  <p className="text-2xl font-semibold tabular-nums">{money(order.totalCents + order.shippingCents)}</p>
+                  <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+                    <Badge tone={payment.tone}>{payment.label}</Badge>
+                    <Badge tone={fulfillment.tone}>{fulfillment.label}</Badge>
+                    {delivery ? <Badge tone={delivery.tone}>{delivery.label}</Badge> : null}
+                  </div>
+                  <div className="grid w-full grid-cols-2 gap-2 text-xs text-muted">
+                    <p className="rounded-xl bg-bg px-2 py-2 text-center">{day(order.createdAt)}</p>
+                    <p className="truncate rounded-xl bg-bg px-2 py-2 text-center">{orderCustomer(order)}</p>
+                  </div>
+                  <p className="text-xs text-muted">{order.itemCount} {order.itemCount === 1 ? "item" : "items"}{order.trackingNumber ? ` · ${order.trackingNumber}` : ""}</p>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        <span className="block font-semibold">{order.number}</span>
+                        <span className="mt-0.5 block text-xs text-muted">{orderCustomer(order)} · {day(order.createdAt)}</span>
+                      </span>
+                      <span className="text-right">
+                        <span className="block font-semibold tabular-nums">{money(order.totalCents + order.shippingCents)}</span>
+                        <span className="text-xs text-muted">{payment.label}</span>
+                      </span>
+                    </>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+          <div className={layout === "list" ? "hidden w-full overflow-x-auto rounded-2xl border border-line bg-surface md:block" : "hidden"}>
           <table className="w-full min-w-[64rem] text-left text-sm">
             <thead className="text-xs text-muted">
               <tr>
@@ -126,28 +179,29 @@ function OrdersPage() {
                       </Link>
                       <p className="text-xs text-muted">{order.organizationName}</p>
                     </td>
-                    <td className="px-4 py-3 text-muted">{day(order.createdAt)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-muted" data-label="Date">{day(order.createdAt)}</td>
+                    <td className="px-4 py-3" data-label="Customer">
                       <p>{orderCustomer(order)}</p>
                       <p className="text-xs text-muted">{orderEmail(order) || "—"}</p>
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums">{money(order.totalCents + order.shippingCents)}</td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 font-mono tabular-nums" data-label="Total">{money(order.totalCents + order.shippingCents)}</td>
+                    <td className="px-4 py-3" data-label="Payment">
                       <Badge tone={payment.tone}>{payment.label}</Badge>
                       <p className="mt-1 text-xs text-muted">{order.paymentMethod ? paymentLabel(order.paymentMethod) : "—"}</p>
                     </td>
-                    <td className="px-4 py-3"><Badge tone={fulfillment.tone}>{fulfillment.label}</Badge></td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" data-label="Fulfillment"><Badge tone={fulfillment.tone}>{fulfillment.label}</Badge></td>
+                    <td className="px-4 py-3" data-label="Delivery">
                       {delivery ? <Badge tone={delivery.tone}>{delivery.label}</Badge> : <span className="text-muted">—</span>}
                       {order.trackingNumber ? <p className="mt-1 font-mono text-xs text-muted">{order.trackingNumber}</p> : null}
                     </td>
-                    <td className="px-4 py-3 tabular-nums">{order.itemCount}</td>
+                    <td className="px-4 py-3 tabular-nums" data-label="Items">{order.itemCount}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       ) : null}
       <Modal open={open} onOpenChange={setOpen} title="New order" description="Ordering follows the company rules and the person's permissions.">
         <form
@@ -178,7 +232,7 @@ function OrdersPage() {
               ))}
             </Select>
           </Field>
-          <div className="grid grid-cols-[minmax(0,1fr)_5rem_auto] gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_5rem_auto]">
             <Select value={productId} onChange={(event) => setProductId(event.target.value ? Number(event.target.value) : "")} aria-label="Product">
               <option value="">Product</option>
               {catalog.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
@@ -200,7 +254,7 @@ function OrdersPage() {
           </div>
           <ul className="text-sm">
             {lines.map((line, index) => (
-              <li key={`${line.productId}-${index}`} className="flex justify-between border-t border-line py-2">
+              <li key={`${line.productId}-${index}`} className="flex items-center justify-between gap-3 border-t border-line py-2">
                 <span>{line.quantity} × {line.name}</span>
                 <button type="button" className="text-muted" onClick={() => setLines(lines.filter((_, item) => item !== index))}>Remove</button>
               </li>

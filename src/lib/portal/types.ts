@@ -21,6 +21,7 @@ export type ShellInfo = {
   peopleCount: number;
   catalogCount: number;
   companyCount: number;
+  noticeCount: number;
 };
 
 export type Ticket = {
@@ -90,6 +91,7 @@ export type Customer = {
   lastOrderStatus: string;
   ticketId: number | null;
   zendeskTicketId: string;
+  payLater: boolean;
 };
 
 export type UserRequest = {
@@ -112,6 +114,7 @@ export type Product = {
   specs: string;
   priceCents: number;
   imageUrl: string;
+  images: string[];
   stock: number;
   available: boolean;
   visibility: string;
@@ -195,6 +198,13 @@ export type Policy = {
   canApproveOrders: boolean;
   canManagePortal: boolean;
   scope: string;
+  canTicket: boolean;
+  canShop: boolean;
+  canPurchase: boolean;
+  canPayNow: boolean;
+  canOrderIt: boolean;
+  canOrderPhone: boolean;
+  canDefer: boolean;
 };
 
 export type Integration = {
@@ -230,6 +240,18 @@ export type Audit = {
   action: string;
   target: string;
   detail: string;
+  createdAt: string;
+};
+
+export type Notice = {
+  id: number;
+  kind: string;
+  title: string;
+  body: string;
+  href: string;
+  audience: string;
+  actorName: string;
+  read: boolean;
   createdAt: string;
 };
 
@@ -343,6 +365,7 @@ export type ShopCustomer = {
   region: string;
   postal: string;
   country: string;
+  payLater: boolean;
 };
 
 export type ShopOrderItem = {
@@ -373,6 +396,65 @@ export type ShopOrder = {
   items: ShopOrderItem[];
 };
 
+export type PortalAccess = {
+  roleId: string;
+  roleLabel: string;
+  canTicket: boolean;
+  canShop: boolean;
+  canPurchase: boolean;
+  canPayNow: boolean;
+  canOrderIt: boolean;
+  canOrderPhone: boolean;
+  canDefer: boolean;
+};
+
+export type PortalComment = { author: string; body: string; at: string };
+
+export type PortalTicket = {
+  id: number;
+  subject: string;
+  status: string;
+  category: string;
+  zendeskId: string;
+  updatedAt: string;
+  comments: PortalComment[];
+};
+
+export type PortalSession = {
+  customer: ShopCustomer;
+  access: PortalAccess;
+  tickets: PortalTicket[];
+  business: string;
+  organization: string;
+  interests: string[];
+  verified: boolean;
+  grants: { shop: boolean; services: boolean; invoice: boolean };
+};
+
+export type ServiceItem = {
+  id: number;
+  category: string;
+  name: string;
+  summary: string;
+  kind: string;
+  benefits: string;
+  scope: string;
+};
+
+export type ServiceRequest = {
+  id: number;
+  category: string;
+  serviceName: string;
+  details: string;
+  severity: string;
+  status: string;
+  quoteNote: string;
+  customer: string;
+  email: string;
+  organization: string;
+  createdAt: string;
+};
+
 export type ShopAccount = {
   customer: ShopCustomer;
   orders: ShopOrder[];
@@ -382,5 +464,10 @@ export type ShopCheckoutInfo = {
   methods: string[];
   invoiceTerms: string;
   alternativeEnvironment: "sandbox" | "live";
+  payLater: boolean;
+  sandboxReady: boolean;
+  signedIn: boolean;
+  canPurchase: boolean;
+  canPayNow: boolean;
 };
 

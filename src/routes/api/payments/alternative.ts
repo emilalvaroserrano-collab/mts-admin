@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/payments/alternative")({
       POST: async ({ request }) => {
         const raw = await request.text();
         try {
-          verifyAlternativeSignature(request, raw);
+          await verifyAlternativeSignature(request, raw);
           const event = readAlternativeEvent(raw ? JSON.parse(raw) : {});
           const sql = await getSql();
           const reference = Number(/^MT-(\d+)$/.exec(event.reference)?.[1] ?? 0);

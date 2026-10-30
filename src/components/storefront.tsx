@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams, useRouterState } from "@tanstack/react-router";
-import { ChevronDown, Minus, Plus, ShoppingBag, UserRound, X } from "lucide-react";
+import { ChevronDown, Headphones, Home, Minus, Plus, ShoppingBag, UserRound, Wrench, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { getStorefront } from "@/lib/portal/api";
 import { money } from "@/lib/portal/format";
@@ -35,7 +35,7 @@ export function StoreFrame({ children }: { children: ReactNode }) {
 
   if (checkout) {
     return (
-      <div className="min-h-screen bg-white text-ink">
+      <div className="min-h-screen max-w-full overflow-x-auto bg-white text-ink">
         <header className="border-b border-line bg-white">
           <div className="mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-8">
             <Link to="/store/$slug" params={{ slug: store.slug }} className="flex items-center gap-2">
@@ -50,7 +50,7 @@ export function StoreFrame({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7fafb] text-ink">
+    <div className="grid min-h-dvh max-w-full grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-x-auto bg-[#f7fafb] text-ink">
       <div className="bg-ink px-4 py-2.5 text-center text-[12px] text-white/85">
         {store.tagline || "Free standard shipping on orders over $500."}
       </div>
@@ -60,10 +60,11 @@ export function StoreFrame({ children }: { children: ReactNode }) {
             <span className="grid size-9 place-items-center rounded-2xl bg-ink text-[11px] font-semibold text-white">MT</span>
             <span className="truncate text-sm font-semibold">{store.brandName}</span>
           </Link>
-          <nav className="ml-6 hidden items-center gap-6 text-[13px] text-muted md:flex">
-            <Link to="/store/$slug" params={{ slug: store.slug }} className="hover:text-ink">Shop</Link>
-            <a href="#catalog" className="hover:text-ink">Catalog</a>
-            <Link to="/store/$slug/account" params={{ slug: store.slug }} className="hover:text-ink">Account</Link>
+          <nav className="ml-4 hidden min-w-0 items-center gap-5 text-[13px] md:flex" aria-label="Store">
+            <Link to="/store/$slug" params={{ slug: store.slug }} className={path === `/store/${store.slug}` || path === `/store/${store.slug}/` ? "font-semibold text-ink" : "text-muted hover:text-ink"}>Shop</Link>
+            <Link to="/store/$slug/services" params={{ slug: store.slug }} className={path.includes("/services") ? "font-semibold text-ink" : "text-muted hover:text-ink"}>MTS Services</Link>
+            <Link to="/store/$slug/tickets" params={{ slug: store.slug }} className={path.includes("/tickets") ? "font-semibold text-ink" : "text-muted hover:text-ink"}>Tickets</Link>
+            <Link to="/store/$slug/account" params={{ slug: store.slug }} className={path.includes("/account") ? "font-semibold text-ink" : "text-muted hover:text-ink"}>Account</Link>
           </nav>
           <div className="ml-auto flex items-center gap-2">
             <Link
@@ -92,24 +93,57 @@ export function StoreFrame({ children }: { children: ReactNode }) {
       </header>
       <div className="pb-24 md:pb-0">{children}</div>
       <footer className="border-t border-line bg-white px-4 py-12">
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mx-auto grid max-w-6xl gap-8 sm:grid-cols-3">
           <div>
             <p className="text-sm font-semibold">{store.brandName}</p>
-            <p className="mt-1 max-w-sm text-sm text-muted">{store.tagline || "Laptops, PCs, and the accessories that go with them."}</p>
+            <p className="mt-2 max-w-xs text-sm leading-6 text-muted">{store.tagline || "Laptops, PCs, and the accessories that go with them."}</p>
           </div>
-          <p className="text-sm text-muted">{store.supportEmail || "Questions go to your account team."}</p>
+          <div className="grid content-start gap-2 text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-subtle">Shop</p>
+            <Link to="/store/$slug" params={{ slug: store.slug }} className="text-muted">Shop</Link>
+            <Link to="/store/$slug/services" params={{ slug: store.slug }} className="text-muted">MTS Services</Link>
+            <Link to="/store/$slug/tickets" params={{ slug: store.slug }} className="text-muted">Tickets</Link>
+            <Link to="/store/$slug/account" params={{ slug: store.slug }} className="text-muted">Account</Link>
+          </div>
+          <div className="grid content-start gap-2 text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-subtle">Support</p>
+            <p className="break-words text-muted">{store.supportEmail || "Ask your account team."}</p>
+            <p className="text-muted">Free standard shipping over $500.</p>
+          </div>
         </div>
       </footer>
-      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-3 border-t border-line bg-white/95 px-2 py-2 backdrop-blur md:hidden" aria-label="Shop">
-        <Link to="/store/$slug" params={{ slug: store.slug }} className="shop-press grid h-12 place-items-center text-[12px] font-medium text-muted">Shop</Link>
-        <button type="button" className="shop-press grid h-12 place-items-center text-[12px] font-semibold text-ink" onClick={() => setCartOpen(true)}>
-          Cart{count ? ` · ${count}` : ""}
-        </button>
-        <Link to="/store/$slug/account" params={{ slug: store.slug }} className="shop-press grid h-12 place-items-center text-[12px] font-medium text-muted">Account</Link>
+      <nav className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-line bg-white/95 px-1 pt-1 backdrop-blur md:hidden" style={{ paddingBottom: "max(0.35rem, env(safe-area-inset-bottom))" }} aria-label="Shop">
+        <ShopTab to="/store/$slug" params={{ slug: store.slug }} active={path === `/store/${store.slug}` || path === `/store/${store.slug}/`} icon={Home} label="Shop" />
+        <ShopTab to="/store/$slug/services" params={{ slug: store.slug }} active={path.includes("/services")} icon={Wrench} label="Services" />
+        <ShopTab to="/store/$slug/tickets" params={{ slug: store.slug }} active={path.includes("/tickets")} icon={Headphones} label="Tickets" />
+        <ShopTab to="/store/$slug/account" params={{ slug: store.slug }} active={path.includes("/account")} icon={UserRound} label="Account" />
       </nav>
       {notice ? <AddedToast products={store.products} notice={notice} onOpen={() => setCartOpen(true)} /> : null}
       {cartOpen ? <CartDrawer products={store.products} slug={store.slug} onClose={() => setCartOpen(false)} /> : null}
     </div>
+  );
+}
+
+function ShopTab({
+  to,
+  params,
+  hash,
+  active,
+  icon: Icon,
+  label,
+}: {
+  to: "/store/$slug" | "/store/$slug/account" | "/store/$slug/services" | "/store/$slug/tickets";
+  params: { slug: string };
+  hash?: string;
+  active: boolean;
+  icon: typeof Home;
+  label: string;
+}) {
+  return (
+    <Link to={to} params={params} hash={hash} className={active ? "shop-press flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] font-semibold text-ink" : "shop-press flex h-14 flex-col items-center justify-center gap-0.5 text-[10px] font-medium text-muted"}>
+      <Icon className="size-5" />
+      {label}
+    </Link>
   );
 }
 
@@ -172,10 +206,10 @@ function CartDrawer({ products, slug, onClose }: { products: Product[]; slug: st
             <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${Math.min(100, (total / FREE_SHIPPING) * 100)}%` }} />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto px-4">
+        <div className="grid min-h-0 flex-1 content-start overflow-y-auto px-4">
           {detailed.length === 0 ? <p className="py-16 text-center text-sm text-muted">Your cart is empty.</p> : null}
           {detailed.map((line) => (
-            <div key={line.sku} className="flex gap-3 border-b border-line py-4">
+            <div key={line.sku} className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3 border-b border-line py-4">
               {line.product?.imageUrl ? <img src={line.product.imageUrl} alt="" className="size-20 rounded-2xl bg-[#f3f6f7] object-cover" /> : <div className="size-20 rounded-2xl bg-[#f3f6f7]" />}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{line.product?.name}</p>
@@ -216,6 +250,46 @@ export function SummaryToggle({ total, children }: { total: string; children: Re
         <span className="text-ink tabular-nums">{total}</span>
       </button>
       <div className={open ? "shop-rise px-4 pb-4 lg:hidden" : "hidden"}>{children}</div>
+    </div>
+  );
+}
+
+export function PhotoLightbox({ images, start, alt, onClose }: { images: string[]; start: string; alt: string; onClose: () => void }) {
+  const list = images.length ? images : start ? [start] : [];
+  const [index, setIndex] = useState(Math.max(0, list.indexOf(start)));
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") setIndex((current) => (current + 1) % list.length);
+      if (event.key === "ArrowLeft") setIndex((current) => (current - 1 + list.length) % list.length);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [list.length, onClose]);
+  const src = list[index] ?? start;
+  if (!src) return null;
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center px-4 py-8">
+      <button type="button" className="shop-fade absolute inset-0 bg-ink/80" aria-label="Close photo" onClick={onClose} />
+      <figure className="shop-lightbox relative z-10 grid w-full max-w-3xl justify-items-center gap-3">
+        <img key={src} src={src} alt={alt} className="max-h-[74vh] w-full rounded-3xl bg-[#eef4f5] object-contain" />
+        <figcaption className="text-sm text-white">{alt}</figcaption>
+        <div className="flex items-center gap-2">
+          {list.length > 1 ? (
+            <button type="button" className="shop-press h-11 rounded-full bg-white px-4 text-sm font-semibold" onClick={() => setIndex((current) => (current - 1 + list.length) % list.length)}>
+              Previous
+            </button>
+          ) : null}
+          <button type="button" className="shop-press h-11 rounded-full bg-white px-4 text-sm font-semibold" onClick={onClose}>
+            Close
+          </button>
+          {list.length > 1 ? (
+            <button type="button" className="shop-press h-11 rounded-full bg-white px-4 text-sm font-semibold" onClick={() => setIndex((current) => (current + 1) % list.length)}>
+              Next
+            </button>
+          ) : null}
+        </div>
+      </figure>
     </div>
   );
 }

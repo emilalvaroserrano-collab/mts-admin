@@ -1,15 +1,14 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
 import type { Sql } from "@/lib/db";
 
 let fileEnv: Record<string, string> | null = null;
 
-function envValue(name: string) {
+async function envValue(name: string) {
   const live = (process.env[name] || "").trim();
   if (live) return live;
   if (!fileEnv) {
     fileEnv = {};
     try {
+      const { readFileSync } = await import("node:fs");
       const text = readFileSync(new URL("../../../.env", import.meta.url), "utf8");
       for (const line of text.split("\n")) {
         const trimmed = line.trim();
@@ -251,8 +250,8 @@ export async function attentionJobs(sql: Sql) {
 export async function resolveMail(sql: Sql) {
   const rows = await sql<Row>`select resend_api_key, email_from from portal_settings where id = 1`;
   const row = rows[0];
-  const key = (row ? s(row, "resend_api_key") : "") || envValue("RESEND_API_KEY");
-  const from = (row ? s(row, "email_from") : "") || envValue("EMAIL_FROM") || "Manage Tech Service <noreply@managetechservice.com>";
+  const key = (row ? s(row, "resend_api_key") : "") || (await envValue("RESEND_API_KEY"));
+  const from = (row ? s(row, "email_from") : "") || (await envValue("EMAIL_FROM")) || "Manage Tech Service <noreply@managetechservice.com>";
   return { key, from };
 }
 
@@ -313,7 +312,7 @@ export async function resendStoredEmail(sql: Sql, emailId: number) {
   await sql`update outbound_emails set status = 'sent', error = '' where id = ${emailId}`;
 }
 
-export function verifyAlternativeSignature(request: Request, raw: string) {
+export async function verifyAlternativeSignature(request: Request, raw: string) {
   const secret = (process.env.ALTERNATIVE_WEBHOOK_SECRET || "").trim();
   const live = (process.env.ALTERNATIVE_ENV || "").toLowerCase() === "live";
   const header =
@@ -325,6 +324,7 @@ export function verifyAlternativeSignature(request: Request, raw: string) {
     if (live) throw new Error("ALTERNATIVE_WEBHOOK_SECRET is required for live webhooks.");
     return;
   }
+  const { createHmac, timingSafeEqual } = await import("node:crypto");
   const digest = createHmac("sha256", secret).update(raw).digest("hex");
   const given = header.replace(/^sha256=/i, "").trim();
   const left = Buffer.from(digest);

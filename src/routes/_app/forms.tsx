@@ -85,7 +85,7 @@ function FormsPage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Intake"
         title="Ticket forms"
@@ -100,7 +100,7 @@ function FormsPage() {
             onClick={() => open(form)}
             className="rounded-2xl border border-line bg-surface p-4 text-left hover:bg-surface-2"
           >
-            <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
               <div>
                 <p className="font-medium">{form.name}</p>
                 <p className="mt-1 text-xs text-muted">
@@ -118,7 +118,7 @@ function FormsPage() {
           </button>
         ))}
       </div>
-      <Panel className="mt-6">
+      <Panel>
         <h2 className="text-sm font-semibold">Test a submission</h2>
         <p className="mt-1 text-sm text-muted">Writes a portal ticket, and a Zendesk ticket when the connection is live.</p>
         <form

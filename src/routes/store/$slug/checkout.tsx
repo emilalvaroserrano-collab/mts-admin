@@ -4,7 +4,7 @@ import { Check, Lock } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { StoreFrame, SummaryToggle, useStore } from "@/components/storefront";
 import { getShopAccount, getShopCheckout, placeStorefrontOrder } from "@/lib/portal/api";
-import { money, paymentLabel } from "@/lib/portal/format";
+import { money } from "@/lib/portal/format";
 import { clearCart, useCart } from "@/lib/portal/store-cart";
 import { setShopToken, useShopToken } from "@/lib/portal/shop-session";
 
@@ -33,7 +33,7 @@ function Checkout() {
     queryFn: () => getShopAccount({ data: token }),
     enabled: Boolean(token),
   });
-  const checkout = useQuery({ queryKey: ["shop-checkout"], queryFn: () => getShopCheckout() });
+  const checkout = useQuery({ queryKey: ["shop-checkout", token], queryFn: () => getShopCheckout({ data: token }) });
   const [step, setStep] = useState<Step>("information");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -47,7 +47,7 @@ function Checkout() {
   const [postal, setPostal] = useState("");
   const [country, setCountry] = useState("United States");
   const [shippingMethod, setShippingMethod] = useState<"standard" | "express">("standard");
-  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("card");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
@@ -64,11 +64,6 @@ function Checkout() {
     setCountry(customer.country || "United States");
   }, [account.data]);
 
-  useEffect(() => {
-    const methods = checkout.data?.methods ?? [];
-    if (!paymentMethod && methods[0]) setPaymentMethod(methods[0]);
-  }, [checkout.data, paymentMethod]);
-
   const detailed = lines
     .map((line) => ({ ...line, product: store?.products.find((product) => product.sku === line.sku) }))
     .filter((line) => line.product);
@@ -78,7 +73,7 @@ function Checkout() {
   const stepIndex = STEPS.indexOf(step);
 
   const place = useMutation({
-    mutationFn: () =>
+    mutationFn: (method: "card" | "pay_later") =>
       placeStorefrontOrder({
         data: {
           name,
@@ -91,7 +86,10 @@ function Checkout() {
           postal,
           country,
           shippingMethod,
-          paymentMethod,
+          paymentMethod: method,
+          cardBrand: "",
+          cardLast4: "",
+          cardExp: "",
           notes,
           password: saveAccount ? password : "",
           token,
@@ -108,7 +106,7 @@ function Checkout() {
   if (!store) return null;
   if (detailed.length === 0 && !place.data) {
     return (
-      <main className="mx-auto max-w-lg px-4 py-16 text-center">
+      <main className="mx-auto grid max-w-lg justify-items-center gap-4 px-4 py-16 text-center">
         <p className="text-lg font-semibold">Your cart is empty</p>
         <Link to="/store/$slug" params={{ slug: store.slug }} className="shop-press mt-6 inline-flex h-12 items-center rounded-full bg-ink px-6 text-sm font-semibold text-white">
           Return to the shop
@@ -118,19 +116,21 @@ function Checkout() {
   }
   if (place.data) {
     return (
-      <main className="shop-rise mx-auto max-w-lg px-4 py-12 sm:py-16">
-        <p className="inline-flex items-center gap-2 text-sm font-semibold text-accent"><Check className="size-4" /> Order confirmed</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight">{place.data.number}</h1>
-        <p className="mt-3 text-base leading-7 text-muted">
-          A confirmation is ready in your account. Shipment starts as not yet shipped, and the status updates as it moves.
+      <main className="shop-rise mx-auto grid max-w-lg gap-3 px-4 py-12 sm:py-16">
+        <p className="inline-flex items-center gap-2 text-sm font-semibold text-accent"><Check className="size-4" /> Order received</p>
+        <h1 className="text-4xl font-semibold tracking-tight">{place.data.number}</h1>
+        <p className="text-base leading-7 text-muted">
+          {place.data.paymentUrl
+            ? "This order is not paid yet. Finish payment on the secure page. It is marked paid only after the provider confirms it."
+            : "The order is in your account. An invoice stays unpaid until it is collected."}
         </p>
-        <p className="mt-4 text-sm">Total <span className="font-semibold tabular-nums">{money(place.data.totalCents)}</span></p>
+        <p className="text-sm">Total <span className="font-semibold tabular-nums">{money(place.data.totalCents)}</span></p>
         {place.data.paymentUrl ? (
           <a href={place.data.paymentUrl} target="_blank" rel="noreferrer" className="shop-press mt-6 inline-flex h-12 items-center rounded-full bg-ink px-6 text-sm font-semibold text-white">
             Continue to payment
           </a>
         ) : null}
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <Link to="/store/$slug/account" params={{ slug: store.slug }} className="shop-press inline-flex h-12 items-center justify-center rounded-full border border-line px-5 text-sm font-semibold">
             Track this order
           </Link>
@@ -144,7 +144,7 @@ function Checkout() {
 
   const summary = (
     <div>
-      <ul className="space-y-3">
+      <ul className="grid gap-3">
         {detailed.map((line) => (
           <li key={line.sku} className="flex items-center gap-3">
             <span className="relative">
@@ -156,7 +156,7 @@ function Checkout() {
           </li>
         ))}
       </ul>
-      <div className="mt-4 space-y-2 border-t border-line pt-4 text-sm">
+      <div className="mt-4 grid gap-2 border-t border-line pt-4 text-sm">
         <p className="flex justify-between"><span className="text-muted">Subtotal</span><span className="tabular-nums">{money(subtotal)}</span></p>
         <p className="flex justify-between"><span className="text-muted">Shipping</span><span className="tabular-nums">{shippingCents === 0 ? "Free" : money(shippingCents)}</span></p>
       </div>
@@ -173,14 +173,14 @@ function Checkout() {
   }
 
   return (
-    <main className="lg:grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(18rem,26rem)]">
+    <main className="grid lg:min-h-[calc(100vh-4rem)] lg:grid-cols-[minmax(0,1fr)_minmax(18rem,26rem)]">
       <section className="bg-[#f3f6f7] lg:order-2 lg:border-l lg:border-line lg:px-8 lg:py-10">
         <SummaryToggle total={money(total)}>{summary}</SummaryToggle>
         <div className="hidden lg:block">{summary}</div>
       </section>
       <section className="bg-white px-4 py-6 sm:px-10 lg:order-1 lg:py-10">
-        <div className="mx-auto w-full max-w-xl">
-          <nav className="mb-6 flex flex-wrap items-center gap-2 text-xs text-muted" aria-label="Checkout">
+        <div className="mx-auto grid w-full max-w-xl gap-6">
+          <nav className="flex flex-wrap items-center gap-2 text-xs text-muted" aria-label="Checkout">
             <Link to="/store/$slug" params={{ slug }}>Cart</Link>
             {STEPS.map((item, index) => (
               <span key={item} className="flex items-center gap-2">
@@ -200,7 +200,7 @@ function Checkout() {
           </nav>
 
           {step !== "information" ? (
-            <div className="mb-4 divide-y divide-line overflow-hidden rounded-2xl border border-line text-sm">
+            <div className="divide-y divide-line overflow-hidden rounded-2xl border border-line text-sm">
               <SummaryRow label="Contact" value={email} onChange={() => go("information")} />
               <SummaryRow label="Ship to" value={[address, city, region, postal, country].filter(Boolean).join(", ")} onChange={() => go("information")} />
               {step === "payment" ? (
@@ -309,32 +309,48 @@ function Checkout() {
               className="shop-rise grid gap-3"
               onSubmit={(event) => {
                 event.preventDefault();
+                setPaymentMethod("card");
                 setError("");
-                place.mutate();
+                place.mutate("card");
               }}
             >
               <h1 className="flex items-center gap-2 text-lg font-semibold"><Lock className="size-4" /> Payment</h1>
-              <p className="text-sm text-muted">All transactions are secure. Billing uses the shipping address.</p>
-              {(checkout.data?.methods ?? ["invoice"]).map((method) => (
-                <label key={method} className={choiceClass(paymentMethod === method)}>
-                  <span className="flex items-center gap-3">
-                    <input type="radio" name="pay" className="size-5" checked={paymentMethod === method} onChange={() => setPaymentMethod(method)} />
-                    <span className="font-semibold">{paymentLabel(method)}</span>
-                  </span>
-                  <span className="text-xs text-muted">
-                    {method === "invoice" ? checkout.data?.invoiceTerms : method === "alternative" ? checkout.data?.alternativeEnvironment === "sandbox" ? "Sandbox" : "Hosted checkout" : ""}
-                  </span>
-                </label>
-              ))}
+              {checkout.data && !checkout.data.signedIn ? (
+                <a href="/login" className="flex h-12 items-center justify-center rounded-xl bg-ink text-sm font-semibold text-white">Sign in to the customer portal</a>
+              ) : null}
+              {checkout.data?.signedIn && !checkout.data.canPurchase ? (
+                <p className="rounded-xl bg-warn-soft px-4 py-3 text-sm text-warn">This account cannot purchase products.</p>
+              ) : null}
+              <p className="text-sm text-muted">
+                Pay now opens the configured payment page. The order stays unpaid until that provider confirms the charge. Card numbers are not stored here.
+              </p>
               <ShopField label="Order notes (optional)">
                 <textarea value={notes} onChange={(event) => setNotes(event.target.value)} className={`${fieldClass} h-24 py-3`} />
               </ShopField>
               {error ? <p className="text-sm text-bad">{error}</p> : null}
-              <div className="mt-2 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <button type="button" className="h-12 text-sm text-accent" onClick={() => go("shipping")}>Return to shipping</button>
-                <button type="submit" disabled={place.isPending} className="shop-press h-12 rounded-xl bg-ink px-6 text-sm font-semibold text-white disabled:opacity-50 sm:min-w-52">
-                  {place.isPending ? "Placing order" : `Pay now · ${money(total)}`}
+              <div className="mt-2 grid gap-3">
+                {(checkout.data?.canPayNow ?? false) ? (
+                <button type="submit" disabled={place.isPending || !checkout.data?.canPurchase} className="shop-press h-12 rounded-xl bg-ink text-sm font-semibold text-white disabled:opacity-50">
+                  {place.isPending && paymentMethod === "card" ? "Placing order" : `Pay now · ${money(total)}`}
                 </button>
+                ) : checkout.data?.signedIn ? <p className="text-center text-xs text-muted">Immediate payment is turned off for this account.</p> : null}
+                {checkout.data?.payLater ? (
+                  <button
+                    type="button"
+                    disabled={place.isPending}
+                    onClick={() => {
+                      setPaymentMethod("pay_later");
+                      setError("");
+                      place.mutate("pay_later");
+                    }}
+                    className="shop-press h-12 rounded-xl border border-ink text-sm font-semibold disabled:opacity-50"
+                  >
+                    Order now, pay later
+                  </button>
+                ) : (
+                  <p className="text-center text-xs text-muted">This account pays before the order is placed.</p>
+                )}
+                <button type="button" className="h-12 text-sm text-accent" onClick={() => go("shipping")}>Return to shipping</button>
               </div>
             </form>
           ) : null}

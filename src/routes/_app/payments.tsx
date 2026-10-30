@@ -103,7 +103,7 @@ function PaymentsPage() {
   const tone = data.lastStatus === "connected" || data.lastStatus === "ready" ? "good" : data.lastStatus === "error" ? "bad" : "neutral";
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Checkout"
         title="Payments"

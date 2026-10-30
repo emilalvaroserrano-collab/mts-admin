@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowLeft, Headphones, ImagePlus, Keyboard, Laptop, LayoutGrid, List, Monitor, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Headphones, ImagePlus, Keyboard, Laptop, LayoutGrid, List, Monitor, Star, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { importProducts, listProducts, removeProduct, saveProduct } from "@/lib/portal/api";
@@ -32,6 +32,7 @@ const blank = (): Product => ({
   priceCents: 0,
   stock: 0,
   imageUrl: "",
+  images: [],
   available: true,
   visibility: "all",
 });
@@ -282,13 +283,17 @@ function ProductsPage() {
           }
           save.mutate({ ...draft, priceCents, stock: quantity });
         }}
-        onPhoto={(file) => {
-          if (file.size > 8_000_000) {
-            toast.error("Use a photo under 8 MB.");
-            return;
-          }
-          void readProductPhoto(file)
-            .then((imageUrl) => setDraft({ ...draft, imageUrl }))
+        onPhotos={(files) => {
+          const list = [...files].slice(0, 8 - draft.images.length);
+          if ([...files].length > list.length) toast.message("A product can hold 8 photos.");
+          void Promise.all(list.map((file) => {
+            if (file.size > 8_000_000) throw new Error("Use a photo under 8 MB.");
+            return readProductPhoto(file);
+          }))
+            .then((added) => {
+              const images = [...draft.images, ...added].slice(0, 8);
+              setDraft({ ...draft, images, imageUrl: draft.imageUrl || images[0] || "" });
+            })
             .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Could not read that photo."));
         }}
       />
@@ -296,7 +301,7 @@ function ProductsPage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Store"
         title="Catalog"
@@ -326,7 +331,7 @@ function ProductsPage() {
           if (file) void onSpreadsheet(file);
         }}
       />
-      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
         <div className="flex gap-2 overflow-x-auto pb-1">
           {["All", ...CATEGORIES].map((item) => (
             <button
@@ -409,8 +414,8 @@ function ProductsPage() {
           })}
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-line bg-surface">
-          <table className="w-full min-w-[40rem] text-left text-sm">
+        <div className="stack-wrap overflow-x-auto rounded-xl border border-line bg-surface">
+          <table className="stack-table w-full min-w-[40rem] text-left text-sm">
             <thead className="text-xs text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">Product</th>
@@ -432,12 +437,12 @@ function ProductsPage() {
                       </span>
                     </button>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-label="Status">
                     <Badge tone={product.available ? "good" : "neutral"}>{product.available ? "Active" : "Draft"}</Badge>
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{product.stock} in stock</td>
-                  <td className="px-4 py-3 text-muted">{product.category}</td>
-                  <td className="px-4 py-3 text-right font-medium tabular-nums">{money(product.priceCents)}</td>
+                  <td className="px-4 py-3 tabular-nums" data-label="Inventory">{product.stock} in stock</td>
+                  <td className="px-4 py-3 text-muted" data-label="Category">{product.category}</td>
+                  <td className="px-4 py-3 text-right font-medium tabular-nums" data-label="Price">{money(product.priceCents)}</td>
                 </tr>
               ))}
             </tbody>
@@ -469,7 +474,7 @@ function ProductEditor({
   onClose,
   onRemove,
   onSave,
-  onPhoto,
+  onPhotos,
 }: {
   draft: Product;
   dollars: string;
@@ -482,17 +487,17 @@ function ProductEditor({
   onClose: () => void;
   onRemove: () => void;
   onSave: () => void;
-  onPhoto: (file: File) => void;
+  onPhotos: (files: File[]) => void;
 }) {
   return (
     <form
-      className="mx-auto max-w-5xl"
+      className="mx-auto grid max-w-5xl gap-4"
       onSubmit={(event) => {
         event.preventDefault();
         onSave();
       }}
     >
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <button type="button" onClick={onClose} className="inline-flex items-center gap-2 text-sm font-medium text-ink">
           <ArrowLeft className="size-4" />
           Products
@@ -511,7 +516,7 @@ function ProductEditor({
           </Button>
         </div>
       </div>
-      <h1 className="mb-4 text-xl font-semibold tracking-tight">{draft.id ? draft.name || "Edit product" : "Add product"}</h1>
+      <h1 className="text-xl font-semibold tracking-tight">{draft.id ? draft.name || "Edit product" : "Add product"}</h1>
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="grid gap-4">
           <Panel className="grid gap-3">
@@ -524,34 +529,56 @@ function ProductEditor({
           </Panel>
           <Panel>
             <h2 className="text-sm font-semibold">Media</h2>
-            <label
-              className="mt-3 grid cursor-pointer place-items-center rounded-xl border border-dashed border-line-strong bg-[#f6f6f7] px-4 py-8 text-center"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault();
-                const file = event.dataTransfer.files?.[0];
-                if (file) onPhoto(file);
-              }}
-            >
-              {draft.imageUrl ? (
-                <img src={draft.imageUrl} alt="" className="max-h-56 w-full object-contain" />
-              ) : (
-                <span className="grid justify-items-center gap-2 text-sm text-muted">
-                  <ImagePlus className="size-6" />
-                  Add image, or drop one here
-                </span>
-              )}
-              <input
-                type="file"
-                accept="image/*"
-                className="sr-only"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  event.target.value = "";
-                  if (file) onPhoto(file);
-                }}
-              />
-            </label>
+            <p className="mt-1 text-xs text-muted">Add up to 8 photos. The one marked Main is what the shop shows first.</p>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {draft.images.map((image, index) => (
+                <div key={`${index}-${image.length}`} className={draft.imageUrl === image ? "grid gap-2 overflow-hidden rounded-xl border-2 border-ink bg-[#f6f6f7] p-2" : "grid gap-2 overflow-hidden rounded-xl border border-line bg-[#f6f6f7] p-2"}>
+                  <img src={image} alt="" className="aspect-square w-full object-contain" />
+                  <div className="flex items-center justify-between gap-2">
+                    <button type="button" className="inline-flex h-8 items-center gap-1 text-xs font-semibold" onClick={() => onChange({ ...draft, imageUrl: image })}>
+                      <Star className={draft.imageUrl === image ? "size-3.5 fill-ink" : "size-3.5"} />
+                      {draft.imageUrl === image ? "Main" : "Set main"}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Remove photo"
+                      className="grid size-8 place-items-center rounded-lg text-muted"
+                      onClick={() => {
+                        const images = draft.images.filter((item) => item !== image);
+                        onChange({ ...draft, images, imageUrl: draft.imageUrl === image ? images[0] ?? "" : draft.imageUrl });
+                      }}
+                    >
+                      <X className="size-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {draft.images.length < 8 ? (
+                <label
+                  className="grid min-h-36 cursor-pointer place-items-center rounded-xl border border-dashed border-line-strong bg-[#f6f6f7] px-3 py-6 text-center text-sm text-muted"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    onPhotos([...(event.dataTransfer.files ?? [])]);
+                  }}
+                >
+                  <span className="grid justify-items-center gap-2">
+                    <ImagePlus className="size-6" />
+                    Add photos
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="sr-only"
+                    onChange={(event) => {
+                      onPhotos([...(event.target.files ?? [])]);
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+              ) : null}
+            </div>
           </Panel>
           <Panel>
             <h2 className="text-sm font-semibold">Pricing</h2>

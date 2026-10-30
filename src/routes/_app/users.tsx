@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { getPeople, reviewRequest, saveCustomer, syncPortalUsers } from "@/lib/portal/api";
+import { getPeople, reviewRequest, saveCustomer, setShopPayLater, setShopRole, syncPortalUsers } from "@/lib/portal/api";
 import type { Customer, Policy } from "@/lib/portal/types";
 import { ago, day } from "@/lib/portal/format";
-import { Badge, Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Panel, Select, StatusBadge, Toggle, errorText } from "@/components/ui";
+import { Badge, Button, ErrorNote, Field, Input, Loading, Modal, PageHeader, Panel, Select, StatusBadge, Toggle, ViewSwitch, errorText, useViewMode } from "@/components/ui";
 
 export const Route = createFileRoute("/_app/users")({
   component: PeoplePage,
@@ -33,6 +33,7 @@ const blank = (): Customer => ({
   lastOrderStatus: "",
   ticketId: null,
   zendeskTicketId: "",
+  payLater: false,
 });
 
 function PeoplePage() {
@@ -40,6 +41,7 @@ function PeoplePage() {
   const query = useQuery({ queryKey: ["people"], queryFn: () => getPeople() });
   const [draft, setDraft] = useState<Customer | null>(null);
   const [view, setView] = useState("all");
+  const [layout, setLayout] = useViewMode("mts-people-view");
   const [search, setSearch] = useState("");
   const save = useMutation({
     mutationFn: (person: Customer) =>
@@ -65,6 +67,22 @@ function PeoplePage() {
       client.invalidateQueries({ queryKey: ["people"] });
       client.invalidateQueries({ queryKey: ["shell"] });
       client.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+  const role = useMutation({
+    mutationFn: (input: { id: number; roleId: string }) => setShopRole({ data: input }),
+    onSuccess: () => {
+      toast.success("Customer role updated");
+      client.invalidateQueries({ queryKey: ["people"] });
+    },
+    onError: (error) => toast.error(errorText(error)),
+  });
+  const payLater = useMutation({
+    mutationFn: (input: { id: number; payLater: boolean }) => setShopPayLater({ data: input }),
+    onSuccess: () => {
+      toast.success("Checkout rule updated");
+      client.invalidateQueries({ queryKey: ["people"] });
     },
     onError: (error) => toast.error(errorText(error)),
   });
@@ -131,7 +149,7 @@ function PeoplePage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Directory"
         title="People"
@@ -145,7 +163,7 @@ function PeoplePage() {
           </>
         }
       />
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <div className="grid justify-items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center sm:justify-items-stretch">
         <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email, or company" aria-label="Search people" className="sm:max-w-xs" />
         <div className="flex gap-2 overflow-x-auto">
           {[
@@ -170,9 +188,10 @@ function PeoplePage() {
             </button>
           ))}
         </div>
+        <ViewSwitch mode={layout} onChange={setLayout} />
       </div>
       {view === "requests" || pending.length > 0 ? (
-        <Panel className="mb-4">
+        <Panel>
           <h2 className="text-sm font-semibold">{view === "requests" ? "Account requests" : "Requests waiting"}</h2>
           <ul className="mt-3 divide-y divide-line">
             {(view === "requests" ? query.data.requests : pending).map((request) => (
@@ -198,7 +217,39 @@ function PeoplePage() {
         </Panel>
       ) : null}
       {view !== "requests" ? (
-        <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+        <>
+        {layout === "grid" ? (
+          <div className="grid justify-items-center gap-3 sm:grid-cols-2 sm:justify-items-stretch xl:grid-cols-3">
+            {people.map((person) => (
+              <article key={`${person.source}-${person.staffUserId || person.id}`} className="grid w-full max-w-md justify-items-center gap-2 rounded-2xl border border-line bg-surface p-4 text-center sm:max-w-none sm:justify-items-start sm:text-left">
+                <p className="font-semibold">{person.name || person.email}</p>
+                <p className="text-xs text-muted">{person.email}</p>
+                <p className="text-xs text-muted">{person.source === "shop" ? "Online shop" : person.organizationName || "No company"} · {person.orderCount} orders</p>
+                {person.source === "shop" ? <p className="text-xs font-medium">{person.payLater ? "Order now, pay later" : "Pays at checkout"}</p> : null}
+                {person.source === "shop" ? <Button size="sm" variant="secondary" onClick={() => addShopPerson(person)}>Add to company</Button> : person.source === "portal" ? <span className="text-xs text-muted">Staff account</span> : <Button size="sm" variant="secondary" onClick={() => setDraft(person)}>Edit</Button>}
+                {person.source === "shop" ? (
+                  <Button size="sm" variant="secondary" onClick={() => payLater.mutate({ id: person.id, payLater: !person.payLater })}>
+                    {person.payLater ? "Require payment" : "Allow pay later"}
+                  </Button>
+                ) : null}
+              </article>
+            ))}
+            {people.length === 0 ? <p className="text-sm text-muted">No one matches that view.</p> : null}
+          </div>
+        ) : (
+          <ul className="grid gap-2 md:hidden">
+            {people.map((person) => (
+              <li key={`${person.source}-${person.staffUserId || person.id}`} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3">
+                <span>
+                  <span className="block font-semibold">{person.name || person.email}</span>
+                  <span className="mt-0.5 block text-xs text-muted">{person.email}</span>
+                </span>
+                {person.source === "shop" ? <Button size="sm" variant="secondary" onClick={() => addShopPerson(person)}>Add</Button> : person.source === "portal" ? <span className="text-xs text-muted">Staff</span> : <Button size="sm" variant="secondary" onClick={() => setDraft(person)}>Edit</Button>}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className={layout === "list" ? "hidden overflow-x-auto rounded-2xl border border-line bg-surface md:block" : "hidden"}>
           <table className="w-full min-w-[56rem] text-left text-sm">
             <thead className="text-xs text-muted">
               <tr>
@@ -219,19 +270,30 @@ function PeoplePage() {
                     <p className="text-xs text-muted">{person.email}</p>
                     {person.phone ? <p className="text-xs text-muted">{person.phone}</p> : null}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-label="Company">
                     <p>{person.source === "shop" ? "Online shop" : person.source === "portal" ? person.organizationName || "Portal" : person.organizationName || "No company"}</p>
                     <p className="text-xs text-muted">{person.source === "company" ? person.title || "—" : person.title}</p>
                   </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {person.source === "shop" ? <Badge tone="info">Shop</Badge> : person.source === "portal" ? <Badge tone="pine">Portal</Badge> : <Badge tone={person.permissionLevel === "authorized" ? "pine" : "neutral"}>{person.permissionLevel}</Badge>}
+                  <td className="px-4 py-3" data-label="Access">
+                    <div className="flex flex-wrap justify-end gap-1 sm:justify-start">
+                      {person.source === "shop" ? (
+                        <select
+                          aria-label={`Role for ${person.email}`}
+                          className="h-8 rounded-lg border border-line bg-white px-2 text-xs"
+                          value={["regular", "buyer", "authorized"].includes(person.permissionLevel) ? person.permissionLevel : "regular"}
+                          onChange={(event) => role.mutate({ id: person.id, roleId: event.target.value })}
+                        >
+                          <option value="regular">Customer</option>
+                          <option value="buyer">Shop</option>
+                          <option value="authorized">Account</option>
+                        </select>
+                      ) : <Badge tone={person.permissionLevel === "authorized" ? "pine" : "neutral"}>{person.permissionLevel}</Badge>}
                       <StatusBadge value={person.active ? "active" : "inactive"} />
                       {person.canOrder ? <Badge tone="good">Orders</Badge> : null}
                       {person.canApproveOrders ? <Badge tone="warn">Approves</Badge> : null}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-label="Orders">
                     {person.lastOrderId ? (
                       <Link to="/orders/$orderId" params={{ orderId: String(person.lastOrderId) }} className="font-medium hover:underline">
                         MT-{1000 + person.lastOrderId}
@@ -241,7 +303,7 @@ function PeoplePage() {
                     )}
                     <p className="text-xs text-muted">{person.orderCount} {person.orderCount === 1 ? "order" : "orders"}{person.lastOrderStatus ? ` · ${person.lastOrderStatus}` : ""}</p>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-label="Ticket">
                     {person.ticketId ? (
                       <Link to="/tickets/$ticketId" params={{ ticketId: String(person.ticketId) }} className="text-accent hover:underline">
                         {person.zendeskTicketId ? `#${person.zendeskTicketId}` : `P-${person.ticketId}`}
@@ -250,8 +312,8 @@ function PeoplePage() {
                       <span className="text-muted">{person.zendeskUserId ? `User ${person.zendeskUserId}` : "Not synced"}</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-muted">{person.createdAt ? day(person.createdAt) : "—"}</td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-4 py-3 text-muted" data-label="Joined">{person.createdAt ? day(person.createdAt) : "—"}</td>
+                  <td className="px-4 py-3 text-right" data-label="Action">
                     {person.source === "shop" ? (
                       <Button size="sm" variant="secondary" onClick={() => addShopPerson(person)}>Add to company</Button>
                     ) : person.source === "portal" ? (
@@ -266,6 +328,7 @@ function PeoplePage() {
           </table>
           {people.length === 0 ? <p className="px-4 py-6 text-sm text-muted">No one matches that view.</p> : null}
         </div>
+        </>
       ) : null}
       <Modal
         open={Boolean(draft)}

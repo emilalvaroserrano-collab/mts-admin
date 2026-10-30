@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { authMiddleware } from "@/lib/auth/middleware";
 import { getSql, type Sql } from "@/lib/db";
 import { storeSlug } from "./format";
+import { commentIsPublic, unpaidCardStatus, verificationDecision } from "./security";
 import {
   ALTERNATIVE_PORTAL,
   alternativeMode,
@@ -36,6 +37,7 @@ import type {
   Dashboard,
   Integration,
   Named,
+  Notice,
   Order,
   OrderDraft,
   OrderEvent,
@@ -45,6 +47,11 @@ import type {
   PeopleData,
   Payments,
   Policy,
+  PortalAccess,
+  PortalSession,
+  ServiceItem,
+  ServiceRequest,
+  PortalTicket,
   PortalSettings,
   Product,
   Role,
@@ -202,6 +209,7 @@ function mapCustomer(row: Row): Customer {
     lastOrderStatus: s(row, "last_order_status"),
     ticketId: nid(row, "ticket_id"),
     zendeskTicketId: s(row, "zendesk_ticket_id"),
+    payLater: b(row, "pay_later"),
   };
 }
 
@@ -268,10 +276,37 @@ function mapProduct(row: Row): Product {
     specs: s(row, "specs"),
     priceCents: n(row, "price_cents"),
     imageUrl: s(row, "image_url"),
+    images: [],
     stock: n(row, "stock"),
     available: b(row, "available"),
     visibility: s(row, "visibility") || "all",
   };
+}
+
+async function attachImages(sql: Sql, products: Product[]) {
+  if (!products.length) return products;
+  const rows = await sql<Row>`select product_id, url from product_images order by product_id, sort_order, id`;
+  const grouped = new Map<number, string[]>();
+  for (const row of rows) {
+    const id = n(row, "product_id");
+    const list = grouped.get(id) ?? [];
+    const url = s(row, "url");
+    if (url) list.push(url);
+    grouped.set(id, list);
+  }
+  return products.map((product) => {
+    const stored = grouped.get(product.id) ?? [];
+    const images = stored.length ? stored : product.imageUrl ? [product.imageUrl] : [];
+    const imageUrl = product.imageUrl && images.includes(product.imageUrl) ? product.imageUrl : images[0] ?? "";
+    return { ...product, imageUrl, images };
+  });
+}
+
+async function replaceImages(sql: Sql, productId: number, images: string[]) {
+  await sql`delete from product_images where product_id = ${productId}`;
+  for (let index = 0; index < images.length; index += 1) {
+    await sql`insert into product_images (product_id, url, sort_order) values (${productId}, ${images[index]}, ${index})`;
+  }
 }
 
 function mapForm(row: Row): TicketForm {
@@ -297,6 +332,13 @@ function mapPolicy(row: Row): Policy {
     canApproveOrders: b(row, "can_approve_orders"),
     canManagePortal: b(row, "can_manage_portal"),
     scope: s(row, "scope"),
+    canTicket: row.can_ticket == null ? true : b(row, "can_ticket"),
+    canShop: b(row, "can_shop"),
+    canPurchase: b(row, "can_purchase"),
+    canPayNow: b(row, "can_pay_now"),
+    canOrderIt: b(row, "can_order_it"),
+    canOrderPhone: b(row, "can_order_phone"),
+    canDefer: b(row, "can_defer"),
   };
 }
 
@@ -361,24 +403,6 @@ async function loadActor(sql: Sql, userId: string): Promise<Actor> {
   const user = users[0];
   const name = user ? s(user, "name") || "Staff" : "Staff";
   const email = user ? s(user, "email") : "";
-  const createdRows = await sql<Row>`
-    insert into portal_staff (user_id, name, email, role)
-    values (${userId}, ${name}, ${email}, 'agent')
-    on conflict (user_id) do update set
-      name = excluded.name,
-      email = case when excluded.email <> '' then excluded.email else portal_staff.email end
-    returning (xmax = 0) as inserted
-  `;
-  const staffIsNew = Boolean(createdRows[0] && (createdRows[0].inserted === true || createdRows[0].inserted === "t"));
-  await sql`
-    update portal_staff set role = 'owner'
-    where user_id = ${userId}
-      and role = 'agent'
-      and not exists (
-        select 1 from portal_staff other
-        where other.role = 'owner' and other.user_id <> ${userId}
-      )
-  `;
   const rows = await sql<Row>`
     select staff.*, org.name as organization_name
     from portal_staff staff
@@ -386,8 +410,14 @@ async function loadActor(sql: Sql, userId: string): Promise<Actor> {
     where staff.user_id = ${userId}
   `;
   const row = rows[0];
-  if (!row) throw new Error("Could not open a staff profile.");
-  const actor = mapActor(row);
+  if (!row) throw new Error("This account is a customer. An admin has to grant desk access.");
+  await sql`
+    update portal_staff set
+      name = ${name},
+      email = case when ${email} <> '' then ${email} else email end
+    where user_id = ${userId}
+  `;
+  const actor = mapActor({ ...row, name, email: email || s(row, "email") });
   if (!actor.active) throw new Error("This account is deactivated.");
   if (email && !s(row, "zendesk_user_id")) {
     try {
@@ -399,20 +429,6 @@ async function loadActor(sql: Sql, userId: string): Promise<Actor> {
       if (zendeskUserId) await sql`update portal_staff set zendesk_user_id = ${zendeskUserId} where user_id = ${userId}`;
     } catch {
       /* sign-in still opens if Zendesk is down */
-    }
-  }
-  if (staffIsNew && email) {
-    try {
-      await openWelcomeTicket(sql, {
-        name,
-        email,
-        organizationId: actor.organizationId,
-        source: "Staff sign-in",
-        detail: "First time this person opened the admin.",
-        actorName: name,
-      });
-    } catch {
-      /* a welcome ticket must not block sign-in */
     }
   }
   return actor;
@@ -440,6 +456,140 @@ async function audit(sql: Sql, actor: Actor, action: string, target: string, det
     insert into audit_logs (actor_user_id, actor_name, action, target, detail)
     values (${actor.userId}, ${actor.name}, ${action}, ${target}, ${detail})
   `;
+  try {
+    await publishNotice(sql, actor, action, target, detail);
+  } catch {
+    // A missed alert should not roll back the change that was just saved.
+  }
+}
+
+function audiencesFor(role: Role) {
+  if (role === "owner") return ["staff", "agent", "admin", "owner"];
+  if (role === "admin") return ["staff", "agent", "admin"];
+  if (role === "agent") return ["staff", "agent"];
+  return ["staff"];
+}
+
+async function publishNotice(sql: Sql, actor: Actor, action: string, target: string, detail: string) {
+  const text = action.toLowerCase();
+  let kind = "desk";
+  let audience = "admin";
+  let href = "/";
+  let title = target ? `${action} · ${target}` : action;
+  let organizationId: number | null = null;
+  const body = detail || `${actor.name || "Someone"} ${action.toLowerCase()}.`;
+
+  if (/ticket|replied|comment/.test(text)) {
+    kind = "ticket";
+    audience = "staff";
+    const rows = await sql<Row>`select id, subject, organization_id from tickets where zendesk_id = ${target} or id::text = ${target} limit 1`;
+    const row = rows[0];
+    if (row) {
+      href = `/tickets/${n(row, "id")}`;
+      organizationId = nid(row, "organization_id");
+      title = `${action} · ${s(row, "subject") || target}`;
+    } else href = "/tickets";
+  } else if (/order/.test(text)) {
+    kind = "order";
+    audience = /delet/.test(text) ? "owner" : /payment|invoice/.test(text) ? "admin" : "agent";
+    const rows = await sql<Row>`select id, organization_id from orders where ('MT-' || (1000 + id)::text) = ${target} or id::text = ${target} limit 1`;
+    const row = rows[0];
+    if (row) {
+      href = `/orders/${n(row, "id")}`;
+      organizationId = nid(row, "organization_id");
+    } else href = "/orders";
+  } else if (/person|user|invit/.test(text)) {
+    kind = "person";
+    audience = "admin";
+    href = "/users";
+  } else if (/company|org/.test(text)) {
+    kind = "company";
+    audience = "admin";
+    const rows = await sql<Row>`select id from organizations where name = ${target} limit 1`;
+    href = rows[0] ? `/organizations/${n(rows[0], "id")}` : "/organizations";
+    organizationId = rows[0] ? n(rows[0], "id") : null;
+  } else if (/product|catalog/.test(text)) {
+    kind = "catalog";
+    audience = "admin";
+    href = "/products";
+  } else if (/form/.test(text)) {
+    kind = "desk";
+    audience = "admin";
+    href = "/forms";
+  } else if (/payment|stripe|resend|setting/.test(text)) {
+    kind = "payment";
+    audience = "owner";
+    href = /resend|setting/.test(text) ? "/settings" : "/payments";
+  } else if (/zendesk|sync|job/.test(text)) {
+    kind = "desk";
+    audience = "admin";
+    href = "/integrations";
+  }
+
+  await sql`
+    insert into notifications (kind, title, body, href, audience, actor_name, organization_id)
+    values (${kind}, ${title}, ${body}, ${href}, ${audience}, ${actor.name}, ${organizationId})
+  `;
+}
+
+async function refreshRoleAlerts(sql: Sql) {
+  await sql`
+    insert into notifications (kind, title, body, href, audience, actor_name, organization_id, dedupe_key, created_at)
+    select 'ticket', 'New ticket · ' || subject,
+      coalesce(nullif(requester_name, ''), 'A customer') || ' opened a ticket that still needs a first reply.',
+      '/tickets/' || id::text, 'staff', coalesce(requester_name, ''), organization_id, 'live:ticket:' || id::text, updated_at
+    from tickets where status = 'new'
+    on conflict (dedupe_key) where dedupe_key is not null do nothing
+  `;
+  await sql`
+    insert into notifications (kind, title, body, href, audience, actor_name, organization_id, dedupe_key, created_at)
+    select 'order', 'Order waiting · MT-' || (1000 + id)::text,
+      'Payment is still open on this order.',
+      '/orders/' || id::text, 'agent', '', organization_id, 'live:order:' || id::text, updated_at
+    from orders
+    where status <> 'cancelled' and coalesce(payment_status, '') in ('', 'unpaid', 'pending')
+    on conflict (dedupe_key) where dedupe_key is not null do nothing
+  `;
+  await sql`
+    insert into notifications (kind, title, body, href, audience, actor_name, organization_id, dedupe_key, created_at)
+    select 'person', 'Account request · ' || requested_name,
+      requested_email || ' was asked for by ' || coalesce(nullif(requested_by, ''), 'the desk') || '.',
+      '/users', 'admin', coalesce(requested_by, ''), organization_id, 'live:request:' || id::text, created_at
+    from user_requests where status = 'pending'
+    on conflict (dedupe_key) where dedupe_key is not null do nothing
+  `;
+}
+
+function mapNotice(row: Row): Notice {
+  return {
+    id: n(row, "id"),
+    kind: s(row, "kind"),
+    title: s(row, "title"),
+    body: s(row, "body"),
+    href: s(row, "href"),
+    audience: s(row, "audience"),
+    actorName: s(row, "actor_name"),
+    read: b(row, "read"),
+    createdAt: s(row, "created_at"),
+  };
+}
+
+async function noticeRows(sql: Sql, actor: Actor) {
+  await refreshRoleAlerts(sql);
+  const allowed = audiencesFor(actor.role);
+  const marks = allowed.map((_, index) => `$${index + 2}`).join(", ");
+  const orgSlot = `$${allowed.length + 2}`;
+  return sql.query<Row>(
+    `select n.*, exists(
+        select 1 from notification_reads r where r.notification_id = n.id and r.user_id = $1
+      ) as read
+     from notifications n
+     where n.audience in (${marks})
+       and (${orgSlot}::int is null or n.organization_id is null or n.organization_id = ${orgSlot})
+     order by n.created_at desc
+     limit 80`,
+    [actor.userId, ...allowed, actor.organizationId],
+  );
 }
 
 async function orgNames(sql: Sql, actor: Actor): Promise<Named[]> {
@@ -717,6 +867,167 @@ async function openWelcomeTicket(
   }
   return { ticketId, zendeskId, warning };
 }
+
+async function filePortalTicket(
+  sql: Sql,
+  input: { name: string; email: string; organizationId: number | null; subject: string; category: string; body: string },
+) {
+  const recent = await sql<Row>`
+    select id, zendesk_id from tickets
+    where lower(requester_email) = lower(${input.email})
+      and subject = ${input.subject}
+      and created_at > now() - interval '20 minutes'
+    order by id desc
+    limit 1
+  `;
+  if (recent[0]) return { ticketId: n(recent[0], "id"), zendeskId: s(recent[0], "zendesk_id") };
+  const inserted = await sql<Row>`
+    insert into tickets (subject, status, priority, category, organization_id, requester_name, requester_email, tags, view_label)
+    values (
+      ${input.subject}, 'new', 'normal', ${input.category}, ${input.organizationId},
+      ${input.name}, ${input.email}, 'portal,customer', ''
+    )
+    returning id
+  `;
+  const ticketId = n(inserted[0], "id");
+  await sql`
+    insert into ticket_comments (ticket_id, author_name, body, public_note)
+    values (${ticketId}, ${input.name || "Customer"}, ${input.body}, true)
+  `;
+  let zendeskId = "";
+  const settings = await readZendesk(sql);
+  if (!supportConnected(settings)) {
+    await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
+    return { ticketId, zendeskId };
+  }
+  try {
+    const created = await zendesk(settings, "/tickets.json", {
+      method: "POST",
+      body: JSON.stringify({
+        ticket: {
+          subject: input.subject,
+          comment: { body: input.body },
+          tags: ["portal", "customer"],
+          status: "new",
+          requester: { name: input.name || input.email, email: input.email },
+        },
+      }),
+    });
+    const remote = obj(created.ticket);
+    zendeskId = remote.id != null ? String(remote.id) : "";
+    if (zendeskId) await sql`update tickets set zendesk_id = ${zendeskId} where id = ${ticketId}`;
+  } catch {
+    await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
+  }
+  return { ticketId, zendeskId };
+}
+
+export const getSessionHome = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const rows = await sql<Row>`select role, active from portal_staff where user_id = ${context.userId} limit 1`;
+    const row = rows[0];
+    if (!row) {
+      const any = await sql<Row>`select count(*)::int as n from portal_staff`;
+      const empty = (any[0] ? n(any[0], "n") : 0) === 0;
+      const users = await sql<Row>`select name, email from "user" where id = ${context.userId} limit 1`;
+      const user = users[0];
+      const allow = (process.env.BOOTSTRAP_OWNER_EMAIL || "").trim().toLowerCase();
+      const email = user ? s(user, "email").toLowerCase() : "";
+      if (empty && allow && email === allow) {
+        await sql`
+          insert into portal_staff (user_id, name, email, role)
+          values (${context.userId}, ${user ? s(user, "name") : "Owner"}, ${email}, 'owner')
+          on conflict (user_id) do nothing
+        `;
+        return { destination: "admin" } as const;
+      }
+    }
+    const staff = Boolean(row && b(row, "active"));
+    return { destination: staff ? "admin" : "portal" } as const;
+  });
+
+export const openPortalFromAuth = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    const users = await sql<Row>`select name, email from "user" where id = ${context.userId} limit 1`;
+    const user = users[0];
+    if (!user || !s(user, "email")) throw new Error("Sign in again.");
+    const email = s(user, "email").toLowerCase();
+    const name = s(user, "name") || email;
+    const verifiedRow = await sql<Row>`select "emailVerified" as verified from "user" where id = ${context.userId} limit 1`;
+    const verified = Boolean(verifiedRow[0] && b(verifiedRow[0], "verified"));
+    const existing = await sql<Row>`select id from shop_customers where email = ${email}`;
+    if (!existing[0]) {
+      const org = await sql<Row>`
+        insert into organizations (name, phone, portal_access, ordering_enabled, notes)
+        values (${name}, '', true, true, 'Customer account. The shop is on. Services and invoices stay off until an admin approves them.')
+        returning id
+      `;
+      const organizationId = n(org[0], "id");
+      await sql`
+        insert into shop_customers (
+          email, name, password_hash, organization_id, business_name, role_id, email_verified,
+          grant_shop, grant_services, grant_invoice, pay_later
+        ) values (
+          ${email}, ${name}, ${await hashShopPassword(crypto.randomUUID())}, ${organizationId}, '', 'buyer', ${verified},
+          true, false, false, false
+        )
+      `;
+    }
+    const token = await newShopToken();
+    await sql`
+      update shop_customers set
+        session_token = ${token},
+        session_expires = now() + interval '12 hours',
+        name = ${name},
+        email_verified = case when ${verified} then true else email_verified end
+      where email = ${email}
+    `;
+    return { token, email, name };
+  });
+
+export const savePortalCompany = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const business = str(raw.business, 160);
+    const phone = str(raw.phone, 40);
+    const city = str(raw.city, 80);
+    if (!token) throw new Error("Sign in again.");
+    if (!business) throw new Error("Enter the company name.");
+    return { token, business, phone, city };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    let organizationId = nid(row, "organization_id");
+    if (organizationId) {
+      await sql`update organizations set name = ${data.business}, phone = ${data.phone} where id = ${organizationId}`;
+    } else {
+      const created = await sql<Row>`
+        insert into organizations (name, phone, portal_access, ordering_enabled, notes)
+        values (${data.business}, ${data.phone}, true, true, 'Updated from the customer portal.')
+        returning id
+      `;
+      organizationId = n(created[0], "id");
+    }
+    await sql`
+      update shop_customers set business_name = ${data.business}, phone = ${data.phone}, city = ${data.city}, organization_id = ${organizationId}
+      where id = ${n(row, "id")}
+    `;
+    await filePortalTicket(sql, {
+      name: s(row, "name"),
+      email: s(row, "email"),
+      organizationId,
+      subject: `Company update: ${data.business}`,
+      category: "Account",
+      body: `${s(row, "name")} updated their portal.\nCompany: ${data.business}\nPhone: ${data.phone}\nCity: ${data.city}`,
+    }).catch(() => undefined);
+    return { ok: true };
+  });
 
 function viewFromTags(tags: string[]) {
   if (tags.includes("need_invoice")) return "Need Invoice";
@@ -1037,7 +1348,33 @@ export const getShell = createServerFn({ method: "GET" })
       peopleCount: counts ? n(counts, "people") : 0,
       catalogCount: counts ? n(counts, "catalog") : 0,
       companyCount: counts ? n(counts, "companies") : 0,
+      noticeCount: (await noticeRows(sql, actor)).filter((row) => !b(row, "read")).length,
     };
+  });
+
+export const listNotifications = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<Notice[]> => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    return (await noticeRows(sql, actor)).map(mapNotice);
+  });
+
+export const getNotification = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .validator((data: number) => data)
+  .handler(async ({ data, context }): Promise<Notice> => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    const rows = await noticeRows(sql, actor);
+    const row = rows.find((item) => n(item, "id") === data);
+    if (!row) throw new Error("That notification is not available for your role.");
+    await sql`
+      insert into notification_reads (notification_id, user_id)
+      values (${data}, ${actor.userId})
+      on conflict (notification_id, user_id) do nothing
+    `;
+    return { ...mapNotice(row), read: true };
   });
 
 export const getDashboard = createServerFn({ method: "GET" })
@@ -1518,7 +1855,8 @@ export const getPeople = createServerFn({ method: "GET" })
     const shop = actor.organizationId
       ? []
       : await sql<Row>`
-          select sc.id, sc.name, sc.email, sc.phone, sc.city, sc.created_at, sc.zendesk_user_id, 'shop' as source,
+          select sc.id, sc.name, sc.email, sc.phone, sc.city, sc.created_at, sc.zendesk_user_id, sc.pay_later,
+            coalesce(sc.role_id, 'regular') as permission_level, 'shop' as source,
             coalesce((select count(*)::int from orders ord where ord.shop_customer_id = sc.id), 0) as order_count,
             (select ord.id from orders ord where ord.shop_customer_id = sc.id order by ord.id desc limit 1) as last_order_id,
             coalesce((select ord.status from orders ord where ord.shop_customer_id = sc.id order by ord.id desc limit 1), '') as last_order_status,
@@ -1538,7 +1876,7 @@ export const getPeople = createServerFn({ method: "GET" })
     const policies = await sql<Row>`select * from role_policies order by id`;
     const directory = people.map(mapCustomer);
     const buyers = shop.map((row) => ({
-      ...mapCustomer({ ...row, active: true, permission_level: "regular", organization_name: s(row, "city") }),
+      ...mapCustomer({ ...row, active: true, organization_name: s(row, "city") }),
       title: "Online shop",
       active: true,
       source: "shop" as const,
@@ -1698,7 +2036,7 @@ export const listProducts = createServerFn({ method: "GET" })
     const sql = await getSql();
     await loadActor(sql, context.userId);
     const rows = await sql<Row>`select * from products order by category, name`;
-    return rows.map(mapProduct);
+    return attachImages(sql, rows.map(mapProduct));
   });
 
 export const saveProduct = createServerFn({ method: "POST" })
@@ -1711,7 +2049,13 @@ export const saveProduct = createServerFn({ method: "POST" })
     const price = intish(raw.priceCents);
     if (price == null || price < 0) throw new Error("Enter a price.");
     const imageUrl = typeof raw.imageUrl === "string" ? raw.imageUrl : "";
-    if (imageUrl.length > 900000) throw new Error("Image is too large. Use a photo under 8 MB.");
+    const images = (Array.isArray(raw.images) ? raw.images : [])
+      .filter((item): item is string => typeof item === "string" && item.length > 0)
+      .slice(0, 8);
+    if (imageUrl && !images.includes(imageUrl)) images.unshift(imageUrl);
+    const photos = images.slice(0, 8);
+    if (photos.some((item) => item.length > 900000)) throw new Error("A photo is too large. Use images under 8 MB.");
+    const main = imageUrl && photos.includes(imageUrl) ? imageUrl : photos[0] ?? "";
     const visibility = str(raw.visibility, 32) === "authorized" ? "authorized" : "all";
     return {
       id: intish(raw.id),
@@ -1722,7 +2066,8 @@ export const saveProduct = createServerFn({ method: "POST" })
       specs: str(raw.specs, 2000),
       priceCents: price,
       stock: Math.max(0, intish(raw.stock) ?? 0),
-      imageUrl,
+      imageUrl: main,
+      images: photos,
       available: flag(raw.available, true),
       visibility,
     };
@@ -1746,6 +2091,7 @@ export const saveProduct = createServerFn({ method: "POST" })
           visibility = ${data.visibility}
         where id = ${data.id}
       `;
+      await replaceImages(sql, data.id, data.images);
       await audit(sql, actor, "Updated product", data.sku, data.available ? "Available" : "Hidden");
       return { id: data.id };
     }
@@ -1757,8 +2103,10 @@ export const saveProduct = createServerFn({ method: "POST" })
       )
       returning id
     `;
+    const id = n(inserted[0], "id");
+    await replaceImages(sql, id, data.images);
     await audit(sql, actor, "Added product", data.sku, data.name);
-    return { id: n(inserted[0], "id") };
+    return { id };
   });
 
 export const removeProduct = createServerFn({ method: "POST" })
@@ -2617,6 +2965,13 @@ export const savePolicy = createServerFn({ method: "POST" })
       canRequestUsers: flag(raw.canRequestUsers),
       canApproveOrders: flag(raw.canApproveOrders),
       canManagePortal: flag(raw.canManagePortal),
+      canTicket: flag(raw.canTicket, true),
+      canShop: flag(raw.canShop),
+      canPurchase: flag(raw.canPurchase),
+      canPayNow: flag(raw.canPayNow),
+      canOrderIt: flag(raw.canOrderIt),
+      canOrderPhone: flag(raw.canOrderPhone),
+      canDefer: flag(raw.canDefer),
     };
   })
   .handler(async ({ context, data }) => {
@@ -2628,7 +2983,14 @@ export const savePolicy = createServerFn({ method: "POST" })
         can_order = ${data.canOrder},
         can_request_users = ${data.canRequestUsers},
         can_approve_orders = ${data.canApproveOrders},
-        can_manage_portal = ${data.canManagePortal}
+        can_manage_portal = ${data.canManagePortal},
+        can_ticket = ${data.canTicket},
+        can_shop = ${data.canShop},
+        can_purchase = ${data.canPurchase},
+        can_pay_now = ${data.canPayNow},
+        can_order_it = ${data.canOrderIt},
+        can_order_phone = ${data.canOrderPhone},
+        can_defer = ${data.canDefer}
       where id = ${data.id}
     `;
     await audit(sql, actor, "Updated role", data.id, "Permission template saved.");
@@ -3369,19 +3731,47 @@ export const getStorefront = createServerFn({ method: "GET" }).handler(async ():
     tagline: setting ? s(setting, "tagline") : "",
     supportEmail: setting ? s(setting, "support_email") : "",
     closed,
-    products: rows.map(mapProduct),
+    products: await attachImages(sql, rows.map(mapProduct)),
   };
 });
 
-export const getShopCheckout = createServerFn({ method: "GET" }).handler(async (): Promise<ShopCheckoutInfo> => {
-  const sql = await getSql();
-  const payments = await readPayments(sql);
-  return {
-    methods: payments.methods.length ? payments.methods : ["invoice"],
-    invoiceTerms: payments.invoiceTerms,
-    alternativeEnvironment: payments.alternativeEnvironment,
-  };
-});
+export const getShopCheckout = createServerFn({ method: "GET" })
+  .validator((input: unknown) => (typeof input === "string" ? input : ""))
+  .handler(async ({ data }): Promise<ShopCheckoutInfo> => {
+    const sql = await getSql();
+    const payments = await readPayments(sql);
+    const signedIn = await shopByToken(sql, data);
+    const access = signedIn ? await accessFor(sql, signedIn) : null;
+    return {
+      methods: payments.methods.length ? payments.methods : ["invoice"],
+      invoiceTerms: payments.invoiceTerms,
+      alternativeEnvironment: payments.alternativeEnvironment,
+      payLater: Boolean(signedIn && (b(signedIn, "pay_later") || access?.canDefer)),
+      sandboxReady: payments.alternativeEnvironment !== "live" && payments.alternativeSecretSet,
+      signedIn: Boolean(signedIn),
+      canPurchase: Boolean(access?.canPurchase),
+      canPayNow: Boolean(access?.canPayNow),
+    };
+  });
+
+export const setShopPayLater = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const id = intish(raw.id);
+    if (!id) throw new Error("Choose a shop customer.");
+    return { id, payLater: raw.payLater === true };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const rows = await sql<Row>`select email from shop_customers where id = ${data.id}`;
+    if (!rows[0]) throw new Error("That shop customer was not found.");
+    await sql`update shop_customers set pay_later = ${data.payLater} where id = ${data.id}`;
+    await audit(sql, actor, data.payLater ? "Allowed pay later" : "Required payment", s(rows[0], "email"), data.payLater ? "Order now, pay later." : "Must pay at checkout.");
+    return { ok: true };
+  });
 
 const SHIPPING = {
   standard: { label: "Standard", cents: (subtotal: number) => (subtotal >= 50000 ? 0 : 1500) },
@@ -3425,13 +3815,26 @@ function mapShopCustomer(row: Row): ShopCustomer {
     region: s(row, "region"),
     postal: s(row, "postal"),
     country: s(row, "country") || "United States",
+    payLater: b(row, "pay_later"),
   };
 }
 
 async function shopByToken(sql: Sql, token: string) {
   if (!token) return undefined;
-  const rows = await sql<Row>`select * from shop_customers where session_token = ${token} limit 1`;
+  const rows = await sql<Row>`
+    select * from shop_customers
+    where session_token = ${token} and session_expires > now()
+    limit 1
+  `;
   return rows[0];
+}
+
+async function notifyCustomer(sql: Sql, customerId: number | null, title: string, body: string, href: string) {
+  if (!customerId) return;
+  await sql`
+    insert into customer_notices (shop_customer_id, title, body, href)
+    values (${customerId}, ${title}, ${body}, ${href})
+  `;
 }
 
 async function shopOrders(sql: Sql, customerId: number, email: string): Promise<ShopOrder[]> {
@@ -3484,8 +3887,8 @@ export const shopRegister = createServerFn({ method: "POST" })
     if (existing[0]) throw new Error("An account with that email already exists. Sign in instead.");
     const token = await newShopToken();
     await sql`
-      insert into shop_customers (email, name, password_hash, session_token)
-      values (${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${token})
+      insert into shop_customers (email, name, password_hash, session_token, session_expires, role_id, grant_shop, grant_services, grant_invoice)
+      values (${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${token}, now() + interval '12 hours', 'regular', false, false, false)
     `;
     const shopOrg = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
     await openWelcomeTicket(sql, {
@@ -3513,8 +3916,9 @@ export const shopLogin = createServerFn({ method: "POST" })
     if (!row || !(await shopPasswordMatches(data.password, s(row, "password_hash")))) {
       throw new Error("Email or password is wrong.");
     }
+    if (!b(row, "email_verified")) throw new Error("Verify your email before signing in.");
     const token = await newShopToken();
-    await sql`update shop_customers set session_token = ${token} where id = ${n(row, "id")}`;
+    await sql`update shop_customers set session_token = ${token}, session_expires = now() + interval '12 hours' where id = ${n(row, "id")}`;
     return { token, email: s(row, "email"), name: s(row, "name") };
   });
 
@@ -3522,7 +3926,7 @@ export const shopLogout = createServerFn({ method: "POST" })
   .validator((input: unknown) => ({ token: str(obj(input).token, 80) }))
   .handler(async ({ data }) => {
     const sql = await getSql();
-    if (data.token) await sql`update shop_customers set session_token = '' where session_token = ${data.token}`;
+    if (data.token) await sql`update shop_customers set session_token = '', session_expires = now() where session_token = ${data.token}`;
     return { ok: true };
   });
 
@@ -3533,6 +3937,995 @@ export const getShopAccount = createServerFn({ method: "GET" })
     const row = await shopByToken(sql, data);
     if (!row) return null;
     return { customer: mapShopCustomer(row), orders: await shopOrders(sql, n(row, "id"), s(row, "email")) };
+  });
+
+async function accessFor(sql: Sql, row: Row): Promise<PortalAccess> {
+  const roleId = s(row, "role_id") || "regular";
+  const rows = await sql<Row>`select * from role_policies where id = ${roleId}`;
+  const policy = rows[0] ? mapPolicy(rows[0]) : null;
+  const canShop = Boolean(policy?.canShop) || b(row, "grant_shop");
+  const canDefer = b(row, "grant_invoice");
+  return {
+    roleId,
+    roleLabel: canDefer ? "Account" : canShop ? "Shop" : "Customer",
+    canTicket: policy ? policy.canTicket : true,
+    canShop,
+    canPurchase: Boolean(policy?.canPurchase) || b(row, "grant_shop"),
+    canPayNow: Boolean(policy?.canPayNow) || b(row, "grant_shop"),
+    canOrderIt: Boolean(policy?.canOrderIt) || b(row, "grant_services"),
+    canOrderPhone: Boolean(policy?.canOrderPhone) || b(row, "grant_services"),
+    canDefer,
+  };
+}
+
+function mapPortalTicket(row: Row, comments: Row[] = []): PortalTicket {
+  return {
+    id: n(row, "id"),
+    subject: s(row, "subject"),
+    status: s(row, "status"),
+    category: s(row, "category"),
+    zendeskId: s(row, "zendesk_id"),
+    updatedAt: s(row, "updated_at"),
+    comments: comments.map((item) => ({
+      author: s(item, "author_name"),
+      body: s(item, "body"),
+      at: s(item, "created_at"),
+    })),
+  };
+}
+
+async function requirePortal(sql: Sql, token: string) {
+  const row = await shopByToken(sql, token);
+  if (!row) throw new Error("Sign in again.");
+  return { row, access: await accessFor(sql, row) };
+}
+
+export const getPortalSession = createServerFn({ method: "GET" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }): Promise<PortalSession | null> => {
+    const sql = await getSql();
+    const row = await shopByToken(sql, data);
+    if (!row) return null;
+    const access = await accessFor(sql, row);
+    const tickets = await sql<Row>`
+      select id, subject, status, category, zendesk_id, updated_at
+      from tickets
+      where lower(requester_email) = lower(${s(row, "email")})
+      order by updated_at desc
+      limit 20
+    `;
+    const orgId = nid(row, "organization_id");
+    const orgs = orgId ? await sql<Row>`select name from organizations where id = ${orgId}` : [];
+    return {
+      customer: mapShopCustomer(row),
+      access,
+      tickets: tickets.map((item) => mapPortalTicket(item)),
+      business: s(row, "business_name"),
+      organization: orgs[0] ? s(orgs[0], "name") : "",
+      interests: s(row, "interests").split(",").map((item) => item.trim()).filter(Boolean),
+      verified: b(row, "email_verified"),
+      grants: { shop: b(row, "grant_shop"), services: b(row, "grant_services"), invoice: b(row, "grant_invoice") },
+    };
+  });
+
+export const getPortalTicket = createServerFn({ method: "GET" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const id = intish(raw.id);
+    if (!token || !id) throw new Error("Missing ticket.");
+    return { token, id };
+  })
+  .handler(async ({ data }): Promise<PortalTicket> => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    const tickets = await sql<Row>`
+      select * from tickets where id = ${data.id} and lower(requester_email) = lower(${s(row, "email")})
+    `;
+    const ticket = tickets[0];
+    if (!ticket) throw new Error("That ticket is not on this account.");
+    const comments = await sql<Row>`
+      select * from ticket_comments
+      where ticket_id = ${data.id} and public_note = true
+      order by created_at
+    `;
+    return mapPortalTicket(ticket, comments);
+  });
+
+export const submitPortalTicket = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const subject = str(raw.subject, 180);
+    const body = str(raw.body, 4000);
+    const category = str(raw.category, 80) || "IT support";
+    const severity = str(raw.severity, 20) || "normal";
+    const device = str(raw.device, 120);
+    if (!token) throw new Error("Sign in again.");
+    if (!subject || !body) throw new Error("Subject and details are required.");
+    return { token, subject, body, category, severity, device };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row, access } = await requirePortal(sql, data.token);
+    if (!access.canTicket) throw new Error("This account cannot open tickets.");
+    const name = s(row, "name");
+    const email = s(row, "email");
+    const orgId = nid(row, "organization_id");
+    const detail = [`Category: ${data.category}`, `Severity: ${data.severity}`, data.device ? `Device: ${data.device}` : "", data.body].filter(Boolean).join("\n");
+    const inserted = await sql<Row>`
+      insert into tickets (subject, status, priority, category, organization_id, requester_name, requester_email, tags, view_label)
+      values (${data.subject}, 'new', ${data.severity === "high" ? "high" : "normal"}, ${data.category}, ${orgId}, ${name}, ${email}, 'portal,customer', '')
+      returning id
+    `;
+    const ticketId = n(inserted[0], "id");
+    await sql`
+      insert into ticket_comments (ticket_id, author_name, body, public_note)
+      values (${ticketId}, ${name || email}, ${detail}, true)
+    `;
+    let zendeskId = "";
+    let warning = "";
+    const settings = await readZendesk(sql);
+    if (!supportConnected(settings)) {
+      await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
+      warning = "The ticket is open in the portal. Zendesk will receive it when the desk is connected.";
+    } else {
+      try {
+        const created = await zendesk(settings, "/tickets.json", {
+          method: "POST",
+          body: JSON.stringify({
+            ticket: {
+              subject: data.subject,
+              comment: { body: detail },
+              tags: ["portal", "customer", data.category.toLowerCase().replace(/\s+/g, "_")],
+              status: "new",
+              requester: { name: name || email, email },
+            },
+          }),
+        });
+        const remote = obj(created.ticket);
+        zendeskId = remote.id != null ? String(remote.id) : "";
+        if (zendeskId) await sql`update tickets set zendesk_id = ${zendeskId} where id = ${ticketId}`;
+        await upsertZendeskUser(sql, { name, email, kind: "shop" }).catch(() => "");
+      } catch (error) {
+        warning = error instanceof Error ? error.message : "Zendesk did not accept the ticket.";
+        await rememberZendesk(sql, "error", warning, false);
+        await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
+      }
+    }
+    await publishNotice(
+      sql,
+      { userId: "", name: name || email, email, role: "viewer", organizationId: null, organizationName: null, active: true },
+      "Opened ticket",
+      String(ticketId),
+      data.subject,
+    ).catch(() => undefined);
+    await notifyCustomer(sql, n(row, "id"), "Ticket opened", data.subject, `/portal/tickets/${ticketId}`).catch(() => undefined);
+    return { ticketId, zendeskId, warning };
+  });
+
+export const refreshPortalTicket = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const id = intish(raw.id);
+    if (!token || !id) throw new Error("Missing ticket.");
+    return { token, id };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    const tickets = await sql<Row>`
+      select * from tickets where id = ${data.id} and lower(requester_email) = lower(${s(row, "email")})
+    `;
+    const ticket = tickets[0];
+    if (!ticket) throw new Error("That ticket is not on this account.");
+    const zendeskId = s(ticket, "zendesk_id");
+    const settings = await readZendesk(sql);
+    if (!zendeskId || !supportConnected(settings)) {
+      return { synced: false, warning: zendeskId ? "Zendesk is not connected." : "This ticket is not in Zendesk yet." };
+    }
+    const remote = await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}.json`);
+    const body = obj(remote.ticket);
+    const status = zdStatus(String(body.status || s(ticket, "status")));
+    await sql`update tickets set status = ${status}, updated_at = now() where id = ${data.id}`;
+    const comments = await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}/comments.json`);
+    const list = Array.isArray(comments.comments) ? comments.comments : [];
+    for (const item of list) {
+      const comment = obj(item);
+      const commentId = comment.id != null ? String(comment.id) : "";
+      const text = typeof comment.body === "string" ? comment.body.slice(0, 4000) : "";
+      if (!commentId || !text) continue;
+      const isPublic = commentIsPublic(comment.public);
+      const existing = await sql<Row>`select id from ticket_comments where zendesk_comment_id = ${commentId} limit 1`;
+      if (existing.length) continue;
+      await sql`
+        insert into ticket_comments (ticket_id, author_name, body, public_note, zendesk_comment_id)
+        values (${data.id}, 'Zendesk', ${text}, ${isPublic}, ${commentId})
+      `;
+    }
+    return { synced: true, warning: "" };
+  });
+
+const SERVICE_MENU = {
+  outlook: { group: "it", name: "Outlook and mailbox setup", cents: 15000 },
+  printer: { group: "it", name: "Printer setup", cents: 8000 },
+  network: { group: "it", name: "Network visit", cents: 25000 },
+  phone: { group: "phone", name: "Business phone line", cents: 4500 },
+  internet: { group: "phone", name: "Internet circuit", cents: 8900 },
+} as const;
+
+export const orderPortalService = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const service = str(raw.service, 20);
+    const notes = str(raw.notes, 1000);
+    if (!token) throw new Error("Sign in again.");
+    if (!(service in SERVICE_MENU)) throw new Error("Choose a service.");
+    return { token, service: service as keyof typeof SERVICE_MENU, notes };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row, access } = await requirePortal(sql, data.token);
+    const item = SERVICE_MENU[data.service];
+    if (item.group === "it" && !access.canOrderIt) throw new Error("This account cannot order IT services.");
+    if (item.group === "phone" && !access.canOrderPhone) throw new Error("This account cannot order phone or internet services.");
+    if (!access.canDefer) throw new Error("This account cannot take an invoice. Pay-later services are turned off.");
+    const orgs = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
+    const org = orgs[0];
+    if (!org) throw new Error("The service desk is not ready to take orders.");
+    const inserted = await sql<Row>`
+      insert into orders (
+        organization_id, shop_customer_id, status, notes, approval_note, payment_method, payment_status,
+        ship_name, ship_email, ship_phone, shipping_method, shipment_status
+      ) values (
+        ${n(org, "id")}, ${n(row, "id")}, 'pending', ${data.notes}, 'Service ordered from the customer portal.',
+        'invoice', 'pay_later', ${s(row, "name")}, ${s(row, "email")}, ${s(row, "phone")}, 'standard', 'unfulfilled'
+      )
+      returning id
+    `;
+    const id = n(inserted[0], "id");
+    await sql`
+      insert into order_items (order_id, product_id, product_name, sku, quantity, unit_price_cents)
+      values (${id}, null, ${item.name}, ${data.service}, 1, ${item.cents})
+    `;
+    return { id, number: `MT-${1000 + id}` };
+  });
+
+export const setShopRole = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const id = intish(raw.id);
+    const roleId = str(raw.roleId, 40);
+    if (!id || !roleId) throw new Error("Choose a customer and a role.");
+    return { id, roleId };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const roles = await sql<Row>`select id from role_policies where id = ${data.roleId}`;
+    if (!roles[0]) throw new Error("That role does not exist.");
+    const rows = await sql<Row>`select email from shop_customers where id = ${data.id}`;
+    if (!rows[0]) throw new Error("That shop customer was not found.");
+    const payLater = data.roleId === "authorized";
+    const shop = data.roleId === "buyer" || data.roleId === "authorized";
+    const services = data.roleId === "authorized";
+    await sql`
+      update shop_customers set
+        role_id = ${data.roleId},
+        pay_later = ${payLater},
+        grant_shop = ${shop},
+        grant_services = ${services},
+        grant_invoice = ${payLater}
+      where id = ${data.id}
+    `;
+    await audit(sql, actor, "Set customer role", s(rows[0], "email"), data.roleId);
+    return { ok: true };
+  });
+
+const INTERESTS = ["Managed IT", "Microsoft 365", "Phone Systems", "Internet Services", "Cloud Services", "Hardware"] as const;
+
+export const portalRegister = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const creds = shopCredentials({ email: raw.email, password: raw.password, name: raw.name }, true);
+    const business = str(raw.business, 160);
+    const phone = str(raw.phone, 40);
+    const interests = (Array.isArray(raw.interests) ? raw.interests : [])
+      .filter((item): item is string => typeof item === "string" && INTERESTS.includes(item as (typeof INTERESTS)[number]))
+      .slice(0, 6);
+    if (!business) throw new Error("Enter the business name.");
+    if (!phone) throw new Error("Enter a phone number.");
+    return { ...creds, business, phone, interests };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const existing = await sql<Row>`select id from shop_customers where email = ${data.email}`;
+    if (existing[0]) throw new Error("An account with that email already exists. Sign in instead.");
+    const domain = data.email.split("@")[1] || "";
+    const shared = ["gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com"].includes(domain);
+    let organizationId: number | null = null;
+    if (!shared && domain) {
+      const found = await sql<Row>`select id from organizations where lower(domain) = ${domain} limit 1`;
+      if (found[0]) organizationId = n(found[0], "id");
+    }
+    if (!organizationId) {
+      const created = await sql<Row>`
+        insert into organizations (name, domain, phone, industry, portal_access, ordering_enabled, notes)
+        values (${data.business}, ${shared ? "" : domain}, ${data.phone}, ${data.interests.join(", ")}, true, false, 'Created from the customer portal. Shopping and invoicing stay off until an admin approves them.')
+        returning id
+      `;
+      organizationId = n(created[0], "id");
+    }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    await sql`
+      insert into shop_customers (
+        email, name, password_hash, phone, business_name, organization_id, role_id,
+        email_verified, verify_code, verify_expires, interests, grant_shop, grant_services, grant_invoice, pay_later
+      ) values (
+        ${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${data.phone}, ${data.business}, ${organizationId}, 'regular',
+        false, ${code}, now() + interval '30 minutes', ${data.interests.join(", ")}, false, false, false, false
+      )
+    `;
+    const mail = await resolveMail(sql);
+    let mailed = false;
+    if (mail.key && mail.from) {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${mail.key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: mail.from,
+          to: [data.email],
+          subject: "Verify your Manage Tech Service portal",
+          text: `Your verification code is ${code}. It expires in 30 minutes. This account starts as support only. An admin approves shop, services, and invoicing.`,
+        }),
+      });
+      mailed = response.ok;
+    }
+    return { email: data.email, mailed, demoCode: mailed ? "" : code };
+  });
+
+export const portalVerify = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const email = str(raw.email, 160).toLowerCase();
+    const code = str(raw.code, 12);
+    if (!email || !code) throw new Error("Enter the email and the code.");
+    return { email, code };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const rows = await sql<Row>`select * from shop_customers where email = ${data.email}`;
+    const row = rows[0];
+    const decision = verificationDecision({
+      hasAccount: Boolean(row),
+      storedCode: row ? s(row, "verify_code") : "",
+      submittedCode: data.code,
+      expiresAt: row ? s(row, "verify_expires") : "",
+      attempts: row ? n(row, "verify_attempts") : 0,
+    });
+    if (!decision.ok || !row) {
+      if (row && decision.reason === "mismatch") {
+        await sql`update shop_customers set verify_attempts = verify_attempts + 1 where id = ${n(row, "id")}`;
+      }
+      if (decision.reason === "locked") throw new Error("Too many attempts. Ask for a new code.");
+      if (decision.reason === "expired") throw new Error("That code has expired.");
+      throw new Error("That code is wrong.");
+    }
+    const token = await newShopToken();
+    await sql`
+      update shop_customers set
+        email_verified = true,
+        verify_code = '',
+        verify_attempts = 0,
+        session_token = ${token},
+        session_expires = now() + interval '12 hours'
+      where id = ${n(row, "id")} and verify_code = ${data.code}
+    `;
+    await upsertZendeskUser(sql, { name: s(row, "name"), email: data.email, kind: "shop" }).catch(() => "");
+    return { token, email: data.email };
+  });
+
+export const listServiceCatalog = createServerFn({ method: "GET" })
+  .handler(async (): Promise<ServiceItem[]> => {
+    const sql = await getSql();
+    const rows = await sql<Row>`select id, category, name, summary, kind, benefits, scope from service_catalog where active = true order by category, name`;
+    return rows.map((row) => ({
+      id: n(row, "id"),
+      category: s(row, "category"),
+      name: s(row, "name"),
+      summary: s(row, "summary"),
+      kind: s(row, "kind"),
+      benefits: s(row, "benefits"),
+      scope: s(row, "scope"),
+    }));
+  });
+
+export const getService = createServerFn({ method: "GET" })
+  .validator((id: number) => intish(id))
+  .handler(async ({ data }): Promise<ServiceItem | null> => {
+    const sql = await getSql();
+    const rows = await sql<Row>`select id, category, name, summary, kind, benefits, scope from service_catalog where id = ${data} and active = true`;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      id: n(row, "id"),
+      category: s(row, "category"),
+      name: s(row, "name"),
+      summary: s(row, "summary"),
+      kind: s(row, "kind"),
+      benefits: s(row, "benefits"),
+      scope: s(row, "scope"),
+    };
+  });
+
+export const listCampaigns = createServerFn({ method: "GET" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { access } = data ? await requirePortal(sql, data) : { access: null };
+    const rows = await sql<Row>`select * from campaigns where active = true order by id desc`;
+    return rows
+      .filter((row) => {
+        const audience = s(row, "audience");
+        if (audience === "shop") return Boolean(access?.canShop);
+        if (audience === "business") return Boolean(access?.canOrderIt || access?.canOrderPhone);
+        return true;
+      })
+      .map((row) => ({
+        id: n(row, "id"),
+        title: s(row, "title"),
+        body: s(row, "body"),
+        audience: s(row, "audience"),
+        ctaLabel: s(row, "cta_label"),
+        ctaHref: s(row, "cta_href"),
+      }));
+  });
+
+export const saveCampaign = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const title = str(raw.title, 140);
+    if (!title) throw new Error("Enter a title.");
+    const audience = str(raw.audience, 20);
+    return {
+      title,
+      body: str(raw.body, 600),
+      audience: audience === "shop" || audience === "business" ? audience : "all",
+      ctaLabel: str(raw.ctaLabel, 40),
+      ctaHref: str(raw.ctaHref, 180),
+    };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    await sql`
+      insert into campaigns (title, body, audience, cta_label, cta_href)
+      values (${data.title}, ${data.body}, ${data.audience}, ${data.ctaLabel}, ${data.ctaHref})
+    `;
+    await audit(sql, actor, "Published campaign", data.title, data.audience);
+    return { ok: true };
+  });
+
+export const listMyComplaints = createServerFn({ method: "GET" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data);
+    const rows = await sql<Row>`
+      select * from complaints where shop_customer_id = ${n(row, "id")} order by id desc limit 30
+    `;
+    return rows.map((item) => ({
+      id: n(item, "id"),
+      kind: s(item, "kind"),
+      subject: s(item, "subject"),
+      body: s(item, "body"),
+      status: s(item, "status"),
+      ticketId: n(item, "ticket_id"),
+      createdAt: s(item, "created_at"),
+    }));
+  });
+
+export const listCustomerNotices = createServerFn({ method: "GET" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data);
+    const rows = await sql<Row>`
+      select * from customer_notices where shop_customer_id = ${n(row, "id")} order by id desc limit 40
+    `;
+    return rows.map((item) => ({
+      id: n(item, "id"),
+      title: s(item, "title"),
+      body: s(item, "body"),
+      href: s(item, "href"),
+      read: Boolean(s(item, "read_at")),
+      createdAt: s(item, "created_at"),
+    }));
+  });
+
+export const markCustomerNotice = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const id = intish(raw.id);
+    if (!token || !id) throw new Error("Missing notice.");
+    return { token, id };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    await sql`
+      update customer_notices set read_at = now()
+      where id = ${data.id} and shop_customer_id = ${n(row, "id")} and read_at is null
+    `;
+    return { ok: true };
+  });
+
+export const respondToQuote = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const id = intish(raw.id);
+    const decision = str(raw.decision, 20);
+    if (!token || !id) throw new Error("Missing quote.");
+    if (decision !== "accepted" && decision !== "rejected") throw new Error("Accept or reject the quote.");
+    return { token, id, decision };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    const rows = await sql<Row>`
+      select * from service_requests where id = ${data.id} and shop_customer_id = ${n(row, "id")}
+    `;
+    const request = rows[0];
+    if (!request) throw new Error("That request is not on this account.");
+    if (s(request, "status") !== "quoted") throw new Error("Only a quoted request can be accepted or rejected.");
+    await sql`update service_requests set status = ${data.decision} where id = ${data.id}`;
+    await notifyCustomer(sql, n(row, "id"), data.decision === "accepted" ? "Quote accepted" : "Quote declined", s(request, "service_name"), "/portal/quotes");
+    return { status: data.decision };
+  });
+
+export const submitComplaint = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const kind = str(raw.kind, 40);
+    const subject = str(raw.subject, 160);
+    const body = str(raw.body, 2000);
+    if (!token || !subject || !body) throw new Error("Describe the complaint.");
+    return { token, kind: kind || "General feedback", subject, body };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    const ticket = await filePortalTicket(sql, {
+      name: s(row, "name"),
+      email: s(row, "email"),
+      organizationId: nid(row, "organization_id"),
+      subject: `Complaint: ${data.subject}`,
+      category: data.kind,
+      body: data.body,
+    });
+    const inserted = await sql<Row>`
+      insert into complaints (shop_customer_id, organization_id, kind, subject, body, status, ticket_id)
+      values (${n(row, "id")}, ${nid(row, "organization_id")}, ${data.kind}, ${data.subject}, ${data.body}, 'open', ${ticket.ticketId})
+      returning id
+    `;
+    await notifyCustomer(sql, n(row, "id"), "Complaint received", data.subject, "/portal/complaints").catch(() => undefined);
+    return { id: n(inserted[0], "id"), ticketId: ticket.ticketId, zendeskId: ticket.zendeskId };
+  });
+
+export const replyPortalTicket = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const id = intish(raw.id);
+    const body = str(raw.body, 4000);
+    if (!token || !id || !body) throw new Error("Write a reply.");
+    return { token, id, body };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    const tickets = await sql<Row>`
+      select * from tickets where id = ${data.id} and lower(requester_email) = lower(${s(row, "email")})
+    `;
+    const ticket = tickets[0];
+    if (!ticket) throw new Error("That ticket is not on this account.");
+    await sql`
+      insert into ticket_comments (ticket_id, author_name, body, public_note)
+      values (${data.id}, ${s(row, "name") || "Customer"}, ${data.body}, true)
+    `;
+    const zendeskId = s(ticket, "zendesk_id");
+    const settings = await readZendesk(sql);
+    if (zendeskId && supportConnected(settings)) {
+      await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}.json`, {
+        method: "PUT",
+        body: JSON.stringify({ ticket: { comment: { body: data.body, public: true } } }),
+      }).catch(() => undefined);
+    }
+    return { ok: true };
+  });
+
+export const saveCustomerSignup = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const interests = (Array.isArray(raw.interests) ? raw.interests : [])
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.slice(0, 40))
+      .slice(0, 6);
+    return {
+      business: str(raw.business, 160),
+      phone: str(raw.phone, 40),
+      address: str(raw.address, 160),
+      city: str(raw.city, 80),
+      interests,
+    };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const users = await sql<Row>`select name, email, "emailVerified" as verified from "user" where id = ${context.userId} limit 1`;
+    const user = users[0];
+    if (!user || !s(user, "email")) throw new Error("Sign in again.");
+    const email = s(user, "email").toLowerCase();
+    const name = s(user, "name") || email;
+    const existing = await sql<Row>`select id, organization_id from shop_customers where email = ${email}`;
+    let organizationId = existing[0] ? nid(existing[0], "organization_id") : null;
+    const company = data.business || name;
+    if (!organizationId) {
+      const org = await sql<Row>`
+        insert into organizations (name, phone, address, portal_access, ordering_enabled, notes)
+        values (${company}, ${data.phone}, ${data.address}, true, false, 'Registered as a customer.')
+        returning id
+      `;
+      organizationId = n(org[0], "id");
+    } else if (data.business) {
+      await sql`update organizations set name = ${data.business}, phone = ${data.phone}, address = ${data.address} where id = ${organizationId}`;
+    }
+    if (!existing[0]) {
+      await sql`
+        insert into shop_customers (
+          email, name, password_hash, phone, address, city, organization_id, business_name, interests,
+          role_id, email_verified, grant_shop, grant_services, grant_invoice, pay_later
+        ) values (
+          ${email}, ${name}, ${await hashShopPassword(crypto.randomUUID())}, ${data.phone}, ${data.address}, ${data.city},
+          ${organizationId}, ${data.business}, ${data.interests.join(", ")}, 'regular', ${b(user, "verified")},
+          false, false, false, false
+        )
+      `;
+    } else {
+      await sql`
+        update shop_customers set
+          phone = ${data.phone},
+          address = ${data.address},
+          city = ${data.city},
+          business_name = ${data.business},
+          interests = ${data.interests.join(", ")},
+          organization_id = ${organizationId}
+        where email = ${email}
+      `;
+    }
+    return { ok: true };
+  });
+
+export const requestPortalService = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const serviceId = intish(raw.serviceId);
+    const details = str(raw.details, 2000);
+    const severity = str(raw.severity, 20) || "normal";
+    if (!token || !serviceId) throw new Error("Choose a service.");
+    if (!details) throw new Error("Tell us what you need.");
+    return { token, serviceId, details, severity };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row, access } = await requirePortal(sql, data.token);
+    const items = await sql<Row>`select * from service_catalog where id = ${data.serviceId} and active = true`;
+    const item = items[0];
+    if (!item) throw new Error("That service is not in the catalog.");
+    const kind = s(item, "kind");
+    if (kind === "phone") {
+      if (!access.canOrderPhone) throw new Error("Phone and internet ordering is not approved for this account.");
+    } else if (!access.canOrderIt) {
+      throw new Error("IT service ordering is not approved for this account.");
+    }
+    const inserted = await sql<Row>`
+      insert into service_requests (shop_customer_id, organization_id, category, service_name, details, severity, status)
+      values (${n(row, "id")}, ${nid(row, "organization_id")}, ${s(item, "category")}, ${s(item, "name")}, ${data.details}, ${data.severity}, 'requested')
+      returning id
+    `;
+    await filePortalTicket(sql, {
+      name: s(row, "name"),
+      email: s(row, "email"),
+      organizationId: nid(row, "organization_id"),
+      subject: `Service request: ${s(item, "name")}`,
+      category: s(item, "category"),
+      body: `${s(row, "name")} asked for ${s(item, "name")} (${s(item, "category")}).\nSeverity: ${data.severity}\n${data.details}`,
+    }).catch(() => undefined);
+    await notifyCustomer(sql, n(row, "id"), "Service request sent", s(item, "name"), "/portal/quotes").catch(() => undefined);
+    return { id: n(inserted[0], "id"), status: "requested" };
+  });
+
+const ORDER_OFFERINGS = {
+  network: { name: "Connect an office to the network", category: "Network" },
+  "voip-line": { name: "VoIP phone line", category: "Phone" },
+  "voip-ext": { name: "VoIP extension", category: "Phone" },
+  "fax-physical": { name: "Physical fax", category: "Fax" },
+  "fax-efax": { name: "eFax", category: "Fax" },
+  "internet-spectrum": { name: "Spectrum cable", category: "Internet" },
+  "internet-att": { name: "AT&T Fiber", category: "Internet" },
+  "internet-frontier": { name: "Frontier Fiber", category: "Internet" },
+  "internet-fixed": { name: "Fixed wireless", category: "Internet" },
+  wiring: { name: "Wiring drop", category: "Wiring" },
+} as const;
+
+export const orderPortalOffering = createServerFn({ method: "POST" })
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const token = str(raw.token, 80);
+    const offering = str(raw.offering, 40);
+    const site = str(raw.site, 200);
+    const notes = str(raw.notes, 1000);
+    const recipientEmail = str(raw.recipientEmail, 160).toLowerCase();
+    const drops = intish(raw.drops) ?? 1;
+    const shipPhone = Boolean(raw.shipPhone);
+    const confirmMonthly = Boolean(raw.confirmMonthly);
+    if (!token) throw new Error("Sign in again.");
+    if (!(offering in ORDER_OFFERINGS)) throw new Error("Choose a service.");
+    return {
+      token,
+      offering: offering as keyof typeof ORDER_OFFERINGS,
+      site,
+      notes,
+      recipientEmail,
+      drops: Math.min(50, Math.max(1, drops)),
+      shipPhone,
+      confirmMonthly,
+    };
+  })
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data.token);
+    const item = ORDER_OFFERINGS[data.offering];
+    if (data.offering === "voip-ext" && !data.confirmMonthly) {
+      throw new Error("Confirm the $18 monthly extension before this can be sent to Telxent.");
+    }
+    if (data.offering === "fax-efax" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.recipientEmail)) {
+      throw new Error("Enter the email address that should receive incoming faxes.");
+    }
+    if ((data.offering === "network" || data.offering.startsWith("internet")) && !data.site) {
+      throw new Error("Enter the office address.");
+    }
+    const monthly = data.offering === "voip-ext" ? 18 : 0;
+    const wiringCents = data.offering === "wiring" ? data.drops * 17500 : 0;
+    const lines = [
+      `Service: ${item.name}`,
+      data.site ? `Site: ${data.site}` : "",
+      data.offering === "fax-efax" ? `Incoming fax email: ${data.recipientEmail}` : "",
+      data.offering === "voip-ext" ? "Customer confirmed $18 per month added to the Telxent VoIP bill." : "",
+      data.offering === "voip-ext" ? "Telxent confirmation is still required before the extension is billed." : "",
+      data.shipPhone ? "Ship a desk phone with this extension." : "",
+      data.offering === "wiring" ? `Drops: ${data.drops}. Wiring is $175 per drop ($${(wiringCents / 100).toFixed(2)}).` : "",
+      monthly ? `Monthly add-on: $${monthly}.` : "",
+      data.notes,
+    ].filter(Boolean);
+    const details = lines.join("\n");
+    const inserted = await sql<Row>`
+      insert into service_requests (shop_customer_id, organization_id, category, service_name, details, severity, status)
+      values (${n(row, "id")}, ${nid(row, "organization_id")}, ${item.category}, ${item.name}, ${details}, 'normal', 'requested')
+      returning id
+    `;
+    const ticket = await filePortalTicket(sql, {
+      name: s(row, "name"),
+      email: s(row, "email"),
+      organizationId: nid(row, "organization_id"),
+      subject: `Order: ${item.name}`,
+      category: item.category,
+      body: details,
+    });
+    await notifyCustomer(sql, n(row, "id"), "Order sent", item.name, "/portal/orders").catch(() => undefined);
+    return { id: n(inserted[0], "id"), ticketId: ticket.ticketId };
+  });
+
+export const listPortalServices = createServerFn({ method: "GET" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }): Promise<ServiceRequest[]> => {
+    const sql = await getSql();
+    const { row } = await requirePortal(sql, data);
+    const rows = await sql<Row>`
+      select * from service_requests
+      where shop_customer_id = ${n(row, "id")}
+      order by created_at desc
+    `;
+    return rows.map((item) => ({
+      id: n(item, "id"),
+      category: s(item, "category"),
+      serviceName: s(item, "service_name"),
+      details: s(item, "details"),
+      severity: s(item, "severity"),
+      status: s(item, "status"),
+      quoteNote: s(item, "quote_note"),
+      customer: s(row, "name"),
+      email: s(row, "email"),
+      organization: "",
+      createdAt: s(item, "created_at"),
+    }));
+  });
+
+export const listServiceDesk = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }): Promise<ServiceRequest[]> => {
+    const sql = await getSql();
+    await loadActor(sql, context.userId);
+    const rows = await sql<Row>`
+      select r.*, c.name as customer_name, c.email as customer_email, o.name as organization_name
+      from service_requests r
+      left join shop_customers c on c.id = r.shop_customer_id
+      left join organizations o on o.id = r.organization_id
+      order by r.created_at desc
+      limit 100
+    `;
+    return rows.map((item) => ({
+      id: n(item, "id"),
+      category: s(item, "category"),
+      serviceName: s(item, "service_name"),
+      details: s(item, "details"),
+      severity: s(item, "severity"),
+      status: s(item, "status"),
+      quoteNote: s(item, "quote_note"),
+      customer: s(item, "customer_name"),
+      email: s(item, "customer_email"),
+      organization: s(item, "organization_name"),
+      createdAt: s(item, "created_at"),
+    }));
+  });
+
+export const setServiceStatus = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const id = intish(raw.id);
+    const status = str(raw.status, 20);
+    const quoteNote = str(raw.quoteNote, 500);
+    if (!id) throw new Error("Choose a request.");
+    if (!["requested", "quoted", "approved", "provisioning", "active", "declined"].includes(status)) throw new Error("Unknown status.");
+    return { id, status, quoteNote };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertWrite(actor);
+    await sql`update service_requests set status = ${data.status}, quote_note = ${data.quoteNote}, updated_at = now() where id = ${data.id}`;
+    await audit(sql, actor, "Updated service request", String(data.id), data.status);
+    return { ok: true };
+  });
+
+export const listPortalCustomers = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await loadActor(sql, context.userId);
+    const rows = await sql<Row>`
+      select c.id, c.name, c.email, c.business_name, c.phone, c.interests, c.email_verified,
+        c.grant_shop, c.grant_services, c.grant_invoice, c.role_id, o.name as organization_name
+      from shop_customers c
+      left join organizations o on o.id = c.organization_id
+      order by c.created_at desc
+    `;
+    return rows.map((row) => ({
+      id: n(row, "id"),
+      name: s(row, "name"),
+      email: s(row, "email"),
+      business: s(row, "business_name"),
+      phone: s(row, "phone"),
+      interests: s(row, "interests"),
+      verified: b(row, "email_verified"),
+      shop: b(row, "grant_shop"),
+      services: b(row, "grant_services"),
+      invoice: b(row, "grant_invoice"),
+      roleId: s(row, "role_id") || "regular",
+      organization: s(row, "organization_name"),
+    }));
+  });
+
+export const setPortalGrants = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const id = intish(raw.id);
+    if (!id) throw new Error("Choose a customer.");
+    return {
+      id,
+      shop: flag(raw.shop),
+      services: flag(raw.services),
+      invoice: flag(raw.invoice),
+    };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const roleId = data.services || data.invoice ? "authorized" : data.shop ? "buyer" : "regular";
+    await sql`
+      update shop_customers set
+        grant_shop = ${data.shop || data.services},
+        grant_services = ${data.services},
+        grant_invoice = ${data.invoice},
+        pay_later = ${data.invoice},
+        role_id = ${roleId}
+      where id = ${data.id}
+    `;
+    await audit(sql, actor, "Updated customer access", String(data.id), `${roleId} shop:${data.shop} services:${data.services} invoice:${data.invoice}`);
+    return { ok: true };
+  });
+
+export const listDeskAccounts = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await loadActor(sql, context.userId);
+    const rows = await sql<Row>`
+      select u.id, u.name, u.email, s.role as staff_role, s.active as staff_active
+      from "user" u
+      left join portal_staff s on s.user_id = u.id
+      order by u.email
+    `;
+    return rows.map((row) => ({
+      id: s(row, "id"),
+      name: s(row, "name"),
+      email: s(row, "email"),
+      role: row.staff_active === false || !s(row, "staff_role") ? "customer" : s(row, "staff_role"),
+    }));
+  });
+
+export const setDeskRole = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
+  .validator((input: unknown) => {
+    const raw = obj(input);
+    const userId = str(raw.userId, 80);
+    const role = str(raw.role, 32);
+    if (!userId) throw new Error("Choose an account.");
+    if (!["customer", "viewer", "agent", "admin", "owner"].includes(role)) throw new Error("Unknown role.");
+    return { userId, role };
+  })
+  .handler(async ({ data, context }) => {
+    const sql = await getSql();
+    const actor = await loadActor(sql, context.userId);
+    assertAdmin(actor);
+    const users = await sql<Row>`select id, name, email from "user" where id = ${data.userId}`;
+    const user = users[0];
+    if (!user) throw new Error("That person has not registered yet.");
+    const current = await sql<Row>`select role, active from portal_staff where user_id = ${data.userId}`;
+    const wasOwner = Boolean(current[0] && s(current[0], "role") === "owner" && b(current[0], "active"));
+    if (wasOwner && data.role !== "owner") {
+      const owners = await sql<Row>`select count(*)::int as n from portal_staff where role = 'owner' and active = true`;
+      if ((owners[0] ? n(owners[0], "n") : 0) <= 1) throw new Error("The last owner has to stay on the desk.");
+    }
+    if (data.role === "customer") {
+      await sql`delete from portal_staff where user_id = ${data.userId}`;
+      await audit(sql, actor, "Made customer", s(user, "email"), "Desk access removed.");
+      return { ok: true };
+    }
+    await sql`
+      insert into portal_staff (user_id, name, email, role, active)
+      values (${data.userId}, ${s(user, "name")}, ${s(user, "email")}, ${data.role}, true)
+      on conflict (user_id) do update set
+        role = ${data.role},
+        active = true,
+        name = ${s(user, "name")},
+        email = ${s(user, "email")}
+    `;
+    await audit(sql, actor, "Set desk role", s(user, "email"), data.role);
+    return { ok: true };
   });
 
 export const saveShopProfile = createServerFn({ method: "POST" })
@@ -3617,6 +5010,9 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
       notes: str(raw.notes, 1000),
       password: str(raw.password, 80),
       token: str(raw.token, 80),
+      cardBrand: str(raw.cardBrand, 16) === "debit" ? "debit" : "credit",
+      cardLast4: str(raw.cardLast4, 4).replace(/\D/g, "").slice(-4),
+      cardExp: str(raw.cardExp, 5),
       items,
     };
   })
@@ -3625,8 +5021,18 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
     const orgs = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
     const org = orgs[0];
     if (!org) throw new Error("The online shop is not ready to take orders.");
-    const payments = await readPayments(sql);
-    const method = payments.methods.includes(data.paymentMethod) ? data.paymentMethod : payments.methods[0] || "invoice";
+    const signedIn = await shopByToken(sql, data.token);
+    if (!signedIn || s(signedIn, "email") !== data.email) {
+      throw new Error("Sign in to the customer portal with the same email before placing an order.");
+    }
+    const access = await accessFor(sql, signedIn);
+    if (!access.canPurchase) throw new Error("This account cannot purchase products.");
+    const payLater = data.paymentMethod === "pay_later";
+    if (payLater && !(access.canDefer || b(signedIn, "pay_later"))) {
+      throw new Error("This account has to pay before the order is placed.");
+    }
+    if (!payLater && !access.canPayNow) throw new Error("This account cannot pay immediately.");
+    const method = payLater ? "pay_later" : "card";
     const skus = data.items.map((item) => item.sku);
     const products = await sql.query<Row>(
       `select * from products where available = true and sku in (${skus.map((_, index) => `$${index + 1}`).join(",")})`,
@@ -3638,10 +5044,8 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
       return sum + (product ? n(product, "price_cents") * item.quantity : 0);
     }, 0);
     const shipping = shippingChoice(data.shippingMethod, subtotal);
-    let customerId: number | null = null;
+    let customerId: number | null = signedIn && s(signedIn, "email") === data.email ? n(signedIn, "id") : null;
     let token = "";
-    const signedIn = await shopByToken(sql, data.token);
-    if (signedIn && s(signedIn, "email") === data.email) customerId = n(signedIn, "id");
     if (!customerId && data.password.length >= 8) {
       const existing = await sql<Row>`select id from shop_customers where email = ${data.email}`;
       if (!existing[0]) {
@@ -3705,8 +5109,24 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
         values (${id}, ${n(line.product, "id")}, ${s(line.product, "name")}, ${s(line.product, "sku")}, ${line.quantity}, ${n(line.product, "price_cents")})
       `;
     }
+    await filePortalTicket(sql, {
+      name: data.name,
+      email: data.email,
+      organizationId: signedIn ? nid(signedIn, "organization_id") : n(org, "id"),
+      subject: `Shop order MT-${1000 + id}`,
+      category: "Hardware & Software",
+      body: `${data.name} placed ${data.items.map((item) => `${item.quantity} × ${item.sku}`).join(", ")} from the online shop.`,
+    }).catch(() => undefined);
     let paymentUrl = "";
-    if (method === "alternative") {
+    await sql`
+      update orders set
+        card_brand = '',
+        card_last4 = '',
+        card_exp = '',
+        payment_status = ${payLater ? "pay_later" : unpaidCardStatus()}
+      where id = ${id}
+    `;
+    if (method === "card") {
       const creds = await loadAlternativeCreds(sql);
       if (creds) {
         try {
@@ -3739,6 +5159,7 @@ export const placeStorefrontOrder = createServerFn({ method: "POST" })
       values ('', 'Online shop', 'Created order', ${`MT-${1000 + id}`}, ${data.email})
     `;
     await settleNewOrder(sql, id, "Online shop");
+    await notifyCustomer(sql, customerId, payLater ? "Order invoiced" : "Order received", `MT-${1000 + id} is ${payLater ? "on invoice" : "waiting for payment"}.`, `/portal/orders/${id}`).catch(() => undefined);
     return { id, number: `MT-${1000 + id}`, paymentUrl, token, totalCents: subtotal + shipping.cents };
   });
 

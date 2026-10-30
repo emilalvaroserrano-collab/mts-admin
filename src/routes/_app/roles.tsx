@@ -28,6 +28,13 @@ function RolesPage() {
           canRequestUsers: policy.canRequestUsers,
           canApproveOrders: policy.canApproveOrders,
           canManagePortal: policy.canManagePortal,
+          canTicket: policy.canTicket,
+          canShop: policy.canShop,
+          canPurchase: policy.canPurchase,
+          canPayNow: policy.canPayNow,
+          canOrderIt: policy.canOrderIt,
+          canOrderPhone: policy.canOrderPhone,
+          canDefer: policy.canDefer,
         },
       }),
     onSuccess: () => {
@@ -46,7 +53,7 @@ function RolesPage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Access"
         title="Roles"
@@ -55,30 +62,25 @@ function RolesPage() {
       <div className="grid gap-3">
         {drafts.map((policy) => (
           <Panel key={policy.id}>
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+            <div className="grid gap-1">
               <div>
                 <h2 className="text-sm font-semibold">{policy.label}</h2>
                 <p className="mt-1 max-w-xl text-sm text-muted">{policy.description}</p>
                 <p className="mt-2 text-xs text-muted">Scope: {policy.scope}</p>
               </div>
             </div>
-            <div className="mt-4 grid gap-2">
-              <Toggle checked={policy.canOrder} onCheckedChange={(canOrder) => patch(policy.id, { canOrder })} label="Can order products" />
-              <Toggle
-                checked={policy.canRequestUsers}
-                onCheckedChange={(canRequestUsers) => patch(policy.id, { canRequestUsers })}
-                label="Can request new users"
-              />
-              <Toggle
-                checked={policy.canApproveOrders}
-                onCheckedChange={(canApproveOrders) => patch(policy.id, { canApproveOrders })}
-                label="Can approve orders"
-              />
-              <Toggle
-                checked={policy.canManagePortal}
-                onCheckedChange={(canManagePortal) => patch(policy.id, { canManagePortal })}
-                label="Can change portal settings"
-              />
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Toggle checked={policy.canTicket} onCheckedChange={(canTicket) => patch(policy.id, { canTicket })} label="Submit and view own tickets" />
+              <Toggle checked={policy.canShop} onCheckedChange={(canShop) => patch(policy.id, { canShop })} label="Access the online shop" />
+              <Toggle checked={policy.canPurchase} onCheckedChange={(canPurchase) => patch(policy.id, { canPurchase })} label="Purchase products" />
+              <Toggle checked={policy.canPayNow} onCheckedChange={(canPayNow) => patch(policy.id, { canPayNow })} label="Pay immediately" />
+              <Toggle checked={policy.canOrderIt} onCheckedChange={(canOrderIt) => patch(policy.id, { canOrderIt })} label="Order IT services" />
+              <Toggle checked={policy.canOrderPhone} onCheckedChange={(canOrderPhone) => patch(policy.id, { canOrderPhone })} label="Order phone and internet" />
+              <Toggle checked={policy.canDefer} onCheckedChange={(canDefer) => patch(policy.id, { canDefer })} label="Deferred payment or invoice" />
+              <Toggle checked={policy.canOrder} onCheckedChange={(canOrder) => patch(policy.id, { canOrder })} label="Legacy: can order products" />
+              <Toggle checked={policy.canRequestUsers} onCheckedChange={(canRequestUsers) => patch(policy.id, { canRequestUsers })} label="Can request new users" />
+              <Toggle checked={policy.canApproveOrders} onCheckedChange={(canApproveOrders) => patch(policy.id, { canApproveOrders })} label="Can approve orders" />
+              <Toggle checked={policy.canManagePortal} onCheckedChange={(canManagePortal) => patch(policy.id, { canManagePortal })} label="Can change portal settings" />
             </div>
             <Button className="mt-4" type="button" disabled={save.isPending} onClick={() => save.mutate(policy)}>
               Save {policy.label.toLowerCase()}

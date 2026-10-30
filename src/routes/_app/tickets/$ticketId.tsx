@@ -58,7 +58,7 @@ function TicketPage() {
   const ticket = query.data.ticket;
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow={ticket.zendeskId ? `Zendesk #${ticket.zendeskId}` : `Portal P-${ticket.id}`}
         title={ticket.subject}
@@ -76,7 +76,7 @@ function TicketPage() {
             <ol className="mt-4 grid gap-3">
               {query.data.comments.map((comment) => (
                 <li key={comment.id} className={comment.publicNote ? "rounded-lg border border-line px-3 py-3" : "rounded-lg bg-warn-soft px-3 py-3"}>
-                  <div className="flex items-center justify-between gap-2 text-xs text-muted">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 text-xs text-muted">
                     <span className="font-medium text-ink">{comment.authorName}</span>
                     <span>{comment.publicNote ? "Public" : "Internal"} · {stamp(comment.createdAt)}</span>
                   </div>
@@ -114,7 +114,7 @@ function TicketPage() {
           </Panel>
         </div>
         <Panel className="h-fit">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
             <h2 className="text-sm font-semibold">Details</h2>
             <StatusBadge value={ticket.status} />
           </div>

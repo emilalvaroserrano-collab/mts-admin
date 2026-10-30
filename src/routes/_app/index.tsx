@@ -23,7 +23,7 @@ function DashboardPage() {
   ];
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Operations"
         title="Admin"
@@ -59,7 +59,7 @@ function DashboardPage() {
           );
         })}
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-4">
         {(
           [
             ["New", data.tickets.incoming],
@@ -79,9 +79,9 @@ function DashboardPage() {
           </Link>
         ))}
       </div>
-      <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,0.8fr)]">
         <Panel>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
             <h2 className="text-sm font-semibold">Recent tickets</h2>
             <Link to="/tickets" search={ticketSearch({ status: "all" })} className="text-sm text-accent">
               All tickets
@@ -89,7 +89,7 @@ function DashboardPage() {
           </div>
           <ul className="divide-y divide-line">
             {data.recentTickets.map((ticket) => (
-              <li key={ticket.id} className="flex items-start justify-between gap-3 py-3">
+              <li key={ticket.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
                   <Link to="/tickets/$ticketId" params={{ ticketId: String(ticket.id) }} className="font-medium hover:underline">
                     {ticket.subject}
@@ -104,7 +104,7 @@ function DashboardPage() {
           </ul>
         </Panel>
         <Panel>
-          <div className="mb-3 flex items-center justify-between">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
             <h2 className="text-sm font-semibold">Orders in motion</h2>
             <Link to="/orders" className="text-sm text-accent">
               All orders
@@ -131,7 +131,7 @@ function DashboardPage() {
           )}
         </Panel>
       </div>
-      <Panel className="mt-4">
+      <Panel>
         <h2 className="text-sm font-semibold">Recent activity</h2>
         <ul className="mt-3 divide-y divide-line">
           {data.activity.length === 0 ? <li className="py-3 text-sm text-muted">No changes yet.</li> : null}

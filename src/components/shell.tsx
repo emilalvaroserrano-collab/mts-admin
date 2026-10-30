@@ -2,13 +2,15 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Building2,
+  Bell,
+  BookOpen,
   Cable,
   ClipboardList,
   CreditCard,
   Eye,
   LayoutDashboard,
   ListTree,
-  Menu,
+  Megaphone,
   Monitor,
   PanelLeftClose,
   PanelLeftOpen,
@@ -16,7 +18,9 @@ import {
   Settings,
   Shield,
   Ticket,
+  UserRound,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -30,19 +34,25 @@ import { Boot, Input } from "./ui";
 
 const NAV = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true, group: "Work" },
+  { to: "/notifications", label: "Notifications", icon: Bell, group: "Work" },
   { to: "/tickets", label: "Tickets", icon: Ticket, group: "Work" },
   { to: "/orders", label: "Orders", icon: ClipboardList, group: "Work" },
   { to: "/organizations", label: "Companies", icon: Building2, group: "Directory" },
   { to: "/users", label: "People", icon: Users, group: "Directory" },
+  { to: "/access", label: "Customer access", icon: UserRound, group: "Directory" },
+  { to: "/campaigns", label: "Campaigns", icon: Megaphone, group: "Directory" },
+  { to: "/services", label: "Services", icon: Wrench, group: "Directory" },
   { to: "/products", label: "Catalog", icon: Monitor, group: "Commerce" },
   { to: "/payments", label: "Payments", icon: CreditCard, group: "Commerce" },
   { to: "/forms", label: "Ticket forms", icon: ListTree, group: "Setup" },
   { to: "/roles", label: "Roles", icon: Shield, group: "Setup" },
   { to: "/integrations", label: "Zendesk", icon: Cable, group: "Setup" },
   { to: "/settings", label: "Settings", icon: Settings, group: "Setup" },
+  { to: "/docs", label: "Docs", icon: BookOpen, group: "Setup" },
 ] as const;
 
 const GROUPS = ["Work", "Directory", "Commerce", "Setup"] as const;
+const MOBILE_TABS = ["/", "/tickets", "/orders", "/products"] as const;
 
 const NAV_COUNTS: Partial<Record<(typeof NAV)[number]["to"], (info: ShellInfo) => number>> = {
   "/tickets": (info) => info.ticketCount,
@@ -50,6 +60,7 @@ const NAV_COUNTS: Partial<Record<(typeof NAV)[number]["to"], (info: ShellInfo) =
   "/users": (info) => info.peopleCount,
   "/products": (info) => info.catalogCount,
   "/orders": (info) => info.orderCount,
+  "/notifications": (info) => info.noticeCount,
 };
 
 function roleLabel(role: Role | undefined) {
@@ -64,7 +75,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const { user, isPending } = useCurrentUserState();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const [more, setMore] = useState(false);
+  const [find, setFind] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [query, setQuery] = useState("");
   const shell = useQuery({
@@ -74,7 +86,8 @@ export function Shell({ children }: { children: ReactNode }) {
   });
 
   useEffect(() => {
-    setOpen(false);
+    setMore(false);
+    setFind(false);
   }, [path]);
 
   useEffect(() => {
@@ -160,7 +173,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     >
                       <Icon className="size-4 shrink-0" strokeWidth={1.75} />
                       {compact ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-                      {!compact && count != null ? (
+                      {!compact && count != null && (item.to !== "/notifications" || count > 0) ? (
                         <span className={active ? "rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold tabular-nums" : "rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-ink"}>
                           {count}
                         </span>
@@ -169,6 +182,7 @@ export function Shell({ children }: { children: ReactNode }) {
                   );
                 })}
                 {group === "Commerce" ? (
+                  <>
                   <a
                     href={`/store/${storeSlug(info?.brandName ?? "Manage Tech Service")}`}
                     target="_blank"
@@ -179,6 +193,15 @@ export function Shell({ children }: { children: ReactNode }) {
                     <Eye className="size-4 shrink-0" strokeWidth={1.75} />
                     {compact ? null : "Online Shop"}
                   </a>
+                  <a
+                    href="/portal"
+                    title={compact ? "Customer portal" : undefined}
+                    className={compact ? "flex h-11 items-center justify-center rounded-xl text-muted hover:bg-surface-2 hover:text-ink" : "flex h-11 items-center gap-2.5 rounded-xl px-3 text-sm font-medium text-muted hover:bg-surface-2 hover:text-ink"}
+                  >
+                    <UserRound className="size-4 shrink-0" strokeWidth={1.75} />
+                    {compact ? null : "Customer portal"}
+                  </a>
+                  </>
                 ) : null}
               </div>
             </div>
@@ -196,52 +219,158 @@ export function Shell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className={collapsed ? "min-h-screen bg-bg text-ink lg:grid lg:grid-cols-[4.5rem_minmax(0,1fr)]" : "min-h-screen bg-bg text-ink lg:grid lg:grid-cols-[16.5rem_minmax(0,1fr)]"}>
-      <aside className="hidden border-r border-line lg:sticky lg:top-0 lg:block lg:h-screen"><Nav compact={collapsed} /></aside>
-      {open ? (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <button className="absolute inset-0 bg-ink/50" aria-label="Close menu" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 w-[min(18rem,88vw)] shadow-[8px_0_32px_rgba(0,57,112,0.18)]"><Nav compact={false} /></aside>
+    <div className={collapsed ? "min-h-screen bg-bg text-ink md:grid md:grid-cols-[4.5rem_minmax(0,1fr)]" : "min-h-screen bg-bg text-ink md:grid md:grid-cols-[16.5rem_minmax(0,1fr)]"}>
+      <aside className="hidden border-r border-line md:sticky md:top-0 md:block md:h-screen"><Nav compact={collapsed} /></aside>
+      {more ? (
+        <div className="fixed inset-0 z-40 md:hidden">
+          <button className="absolute inset-0 bg-ink/40" aria-label="Close menu" onClick={() => setMore(false)} />
+          <div className="absolute inset-x-0 bottom-[4.25rem] grid max-h-[70vh] content-start gap-3 overflow-y-auto rounded-t-3xl border border-line bg-surface p-4 shadow-[0_-12px_40px_rgba(0,57,112,0.12)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center">
+              <p className="text-sm font-semibold">More</p>
+              <button type="button" className="grid size-11 place-items-center rounded-full hover:bg-surface-2" aria-label="Close" onClick={() => setMore(false)}>
+                <X className="size-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {NAV.filter((item) => !MOBILE_TABS.includes(item.to as (typeof MOBILE_TABS)[number])).map((item) => {
+                const Icon = item.icon;
+                const active = path === item.to || path.startsWith(`${item.to}/`);
+                const count = info ? NAV_COUNTS[item.to]?.(info) : undefined;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={active ? "grid min-h-20 content-center justify-items-center gap-1 rounded-2xl bg-ink px-2 py-3 text-center text-white" : "grid min-h-20 content-center justify-items-center gap-1 rounded-2xl bg-surface-2 px-2 py-3 text-center text-ink"}
+                  >
+                    <Icon className="size-5" strokeWidth={1.75} />
+                    <span className="text-[12px] font-medium leading-tight">{item.label}</span>
+                    {count != null ? <span className="text-[11px] tabular-nums opacity-70">{count}</span> : null}
+                  </Link>
+                );
+              })}
+              <a
+                href={`/store/${storeSlug(info?.brandName ?? "Manage Tech Service")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="grid min-h-20 content-center justify-items-center gap-1 rounded-2xl bg-surface-2 px-2 py-3 text-center text-ink"
+              >
+                <Eye className="size-5" strokeWidth={1.75} />
+                <span className="text-[12px] font-medium leading-tight">Online Shop</span>
+              </a>
+            </div>
+          </div>
         </div>
       ) : null}
-      <div className="min-w-0">
-        <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur sm:gap-3 sm:px-5">
+      <div className="grid min-h-screen min-w-0 grid-rows-[auto_minmax(0,1fr)]">
+        <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
+          <div className="grid h-16 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-3 md:px-5">
+            <div className="min-w-0 md:hidden">
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-subtle uppercase">{current?.group ?? "Desk"}</p>
+              <p className="truncate text-sm font-semibold text-ink">{current?.label ?? "Admin"}</p>
+            </div>
+            <div className="hidden min-w-0 md:block">
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-subtle uppercase">{current?.group ?? "Desk"}</p>
+              <p className="truncate text-sm font-semibold text-ink">{current?.label ?? "Admin"}</p>
+            </div>
+            <form
+              className="relative hidden min-w-0 md:block"
+              onSubmit={(event) => {
+                event.preventDefault();
+                navigate({ to: "/tickets", search: ticketSearch({ q: query.trim(), status: "all" }) });
+              }}
+            >
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" />
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search tickets"
+                aria-label="Search tickets"
+                className="h-10 border-transparent bg-surface-2 pl-9"
+              />
+            </form>
+            <div className="grid grid-flow-col items-center gap-1">
+              <Link
+                to="/notifications"
+                className="relative grid size-11 place-items-center rounded-xl text-ink"
+                aria-label={info?.noticeCount ? `${info.noticeCount} unread notifications` : "Notifications"}
+              >
+                <Bell className="size-5" />
+                {info?.noticeCount ? (
+                  <span className="absolute top-1 right-1 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-white">
+                    {info.noticeCount > 99 ? "99+" : info.noticeCount}
+                  </span>
+                ) : null}
+              </Link>
+              <button
+                type="button"
+                className="grid size-11 place-items-center rounded-xl text-ink md:hidden"
+                aria-label="Search tickets"
+                aria-expanded={find}
+                onClick={() => setFind((value) => !value)}
+              >
+                <Search className="size-5" />
+              </button>
+              <UserButton />
+            </div>
+          </div>
+          {find ? (
+            <form
+              className="grid px-3 pb-3 md:hidden"
+              onSubmit={(event) => {
+                event.preventDefault();
+                navigate({ to: "/tickets", search: ticketSearch({ q: query.trim(), status: "all" }) });
+              }}
+            >
+              <Input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search tickets"
+                aria-label="Search tickets"
+                autoFocus
+                className="h-12 bg-surface-2 text-base"
+              />
+            </form>
+          ) : null}
+          {info?.actor.role === "viewer" ? (
+            <p className="border-t border-[#e3c98a] bg-warn-soft px-4 py-2 text-sm text-warn">
+              View-only access. Changes are turned off for this account.
+            </p>
+          ) : null}
+        </header>
+        <div className="admin-main grid w-full min-w-0 max-w-full content-start py-5 pb-[max(6.5rem,env(safe-area-inset-bottom))] md:pb-6">{children}</div>
+        <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-surface/95 px-1 pt-1 backdrop-blur md:hidden" style={{ paddingBottom: "max(0.35rem, env(safe-area-inset-bottom))" }} aria-label="Admin">
+          {MOBILE_TABS.map((to) => {
+            const item = NAV.find((entry) => entry.to === to);
+            if (!item) return null;
+            const Icon = item.icon;
+            const active = "exact" in item && item.exact ? path === item.to : path === item.to || path.startsWith(`${item.to}/`);
+            const count = info ? NAV_COUNTS[item.to]?.(info) : undefined;
+            return (
+              <Link
+                key={to}
+                to={item.to}
+                search={item.to === "/tickets" ? ticketSearch() : undefined}
+                aria-current={active ? "page" : undefined}
+                className={active ? "grid min-h-14 place-items-center gap-0.5 text-ink" : "grid min-h-14 place-items-center gap-0.5 text-muted"}
+              >
+                <span className="relative">
+                  <Icon className="size-5" strokeWidth={active ? 2.25 : 1.75} />
+                  {count ? <span className="absolute -top-1.5 -right-2 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-white">{count > 99 ? "99+" : count}</span> : null}
+                </span>
+                <span className="text-[11px] font-medium">{item.label === "Dashboard" ? "Home" : item.label}</span>
+              </Link>
+            );
+          })}
           <button
             type="button"
-            className="grid size-11 place-items-center rounded-xl border border-line bg-surface lg:hidden"
-            aria-label={open ? "Close menu" : "Open menu"}
-            onClick={() => setOpen((value) => !value)}
+            className={more || (current && !MOBILE_TABS.includes(current.to as (typeof MOBILE_TABS)[number])) ? "grid min-h-14 place-items-center gap-0.5 text-ink" : "grid min-h-14 place-items-center gap-0.5 text-muted"}
+            aria-expanded={more}
+            onClick={() => setMore((value) => !value)}
           >
-            {open ? <X className="size-4" /> : <Menu className="size-4" />}
+            <ListTree className="size-5" strokeWidth={1.75} />
+            <span className="text-[11px] font-medium">More</span>
           </button>
-          <div className="hidden min-w-0 sm:block">
-            <p className="text-[11px] font-semibold tracking-[0.14em] text-subtle uppercase">{current?.group ?? "Desk"}</p>
-            <p className="truncate text-sm font-semibold text-ink">{current?.label ?? "Admin"}</p>
-          </div>
-          <form
-            className="relative min-w-0 flex-1"
-            onSubmit={(event) => {
-              event.preventDefault();
-              navigate({ to: "/tickets", search: ticketSearch({ q: query.trim(), status: "all" }) });
-            }}
-          >
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-subtle" />
-            <Input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search tickets"
-              aria-label="Search tickets"
-              className="h-11 border-transparent bg-surface-2 pl-9 sm:h-10"
-            />
-          </form>
-          <UserButton />
-        </header>
-        {info?.actor.role === "viewer" ? (
-          <p className="border-b border-[#e3c98a] bg-warn-soft px-4 py-2 text-sm text-warn">
-            View-only access. Changes are turned off for this account.
-          </p>
-        ) : null}
-        <div className="admin-main px-4 py-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:px-6 sm:py-6">{children}</div>
+        </nav>
       </div>
     </div>
   );

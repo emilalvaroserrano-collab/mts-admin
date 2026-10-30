@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import type { Sql } from "@/lib/db";
 
 export type ConversationsConfig = {
@@ -55,7 +54,7 @@ export async function testConversations() {
   return { name: names.length ? names.join(", ") : "Conversations API" };
 }
 
-export function verifyZendeskWebhook(request: Request, rawBody: string) {
+export async function verifyZendeskWebhook(request: Request, rawBody: string) {
   const config = conversationsConfig();
   if (!config.webhookSecret) {
     throw new Error("ZENDESK_WEBHOOK_SECRET is not set.");
@@ -72,6 +71,7 @@ export function verifyZendeskWebhook(request: Request, rawBody: string) {
   if (!Number.isFinite(millis) || Math.abs(Date.now() - millis) > 5 * 60 * 1000) {
     throw new Error("Webhook timestamp is outside the allowed window.");
   }
+  const { createHmac, timingSafeEqual } = await import("node:crypto");
   const expected = createHmac("sha256", config.webhookSecret).update(timestamp + rawBody).digest("base64");
   const left = Buffer.from(signature);
   const right = Buffer.from(expected);
@@ -118,6 +118,13 @@ export async function ingestZendeskWebhook(sql: Sql, payload: unknown) {
   const body = asRecord(payload);
   let stored = 0;
   const ticket = asRecord(body.ticket);
+  if (ticket.id != null) {
+    const status = textOf(ticket.status).toLowerCase();
+    const mapped = status === "hold" ? "pending" : ["new", "open", "pending", "solved", "closed"].includes(status) ? status : "";
+    if (mapped) {
+      await sql`update tickets set status = ${mapped}, updated_at = now() where zendesk_id = ${String(ticket.id)}`;
+    }
+  }
   if (ticket.id != null && (textOf(ticket.subject) || textOf(ticket.description))) {
     const ok = await saveMessage(
       sql,

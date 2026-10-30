@@ -45,7 +45,7 @@ function CompanyPage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow={form.industry || "Company"}
         title={form.name}
@@ -91,7 +91,7 @@ function CompanyPage() {
           <Toggle checked={form.approvalRequired} onCheckedChange={(approvalRequired) => patch({ approvalRequired })} label="Order approval required" />
         </div>
       </div>
-      <div className="mt-4 grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         <Panel>
           <h2 className="text-sm font-semibold">People</h2>
           <ul className="mt-3 divide-y divide-line text-sm">

@@ -106,7 +106,7 @@ function SettingsPage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Desk"
         title="Settings"
@@ -172,8 +172,8 @@ function SettingsPage() {
           </ul>
         </Panel>
       </div>
-      <Panel className="mt-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <Panel>
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <h2 className="text-sm font-semibold">Resend</h2>
           <span className="text-xs font-medium text-muted">
             {query.data.mail.keySet ? "API key saved" : "No API key yet"}
@@ -212,7 +212,7 @@ function SettingsPage() {
           </div>
         </form>
       </Panel>
-      <Panel className="mt-4">
+      <Panel>
         <h2 className="text-sm font-semibold">Staff</h2>
         <p className="mt-1 text-sm text-muted">A company limit hides every other organization. Leave it open for the whole desk. Super Admin is the only role that can delete an order.</p>
         <ul className="mt-4 grid gap-4">

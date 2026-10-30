@@ -158,7 +158,7 @@ function OrderPage() {
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow={`Placed ${day(order.createdAt)}`}
         title={order.number}
@@ -189,7 +189,7 @@ function OrderPage() {
           </>
         }
       />
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Badge tone={payment.tone}>{payment.label}</Badge>
         <Badge tone={fulfillment.tone}>{fulfillment.label}</Badge>
         {delivery ? <Badge tone={delivery.tone}>{delivery.label}</Badge> : null}
@@ -202,7 +202,7 @@ function OrderPage() {
           <span className="text-sm text-muted">No linked ticket</span>
         )}
       </div>
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Panel>
           <p className="text-xs font-medium text-muted">Customer</p>
           <p className="mt-1 text-sm font-semibold">{orderCustomer(order)}</p>
@@ -239,7 +239,7 @@ function OrderPage() {
         </Panel>
       </div>
       {order.events.length > 0 ? (
-        <Panel className="mb-4">
+        <Panel>
           <h2 className="text-sm font-semibold">Timeline</h2>
           <ul className="mt-3 divide-y divide-line">
             {order.events.map((event) => (
@@ -258,8 +258,8 @@ function OrderPage() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_20rem]">
         <Panel>
           <h2 className="text-sm font-semibold">Items</h2>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[28rem] text-left text-sm">
+          <div className="stack-wrap mt-4 overflow-x-auto">
+            <table className="stack-table w-full min-w-[28rem] text-left text-sm">
               <thead className="text-xs text-muted">
                 <tr>
                   <th className="py-2 font-medium">Item</th>
@@ -275,7 +275,7 @@ function OrderPage() {
                       <p className="font-medium">{item.productName}</p>
                       <p className="text-xs text-muted">{item.sku}</p>
                     </td>
-                    <td className="py-3">
+                    <td className="py-3" data-label="Qty">
                       <Input
                         type="number"
                         min={1}
@@ -290,8 +290,8 @@ function OrderPage() {
                         }}
                       />
                     </td>
-                    <td className="py-3 font-mono tabular-nums">{money(item.unitPriceCents)}</td>
-                    <td className="py-3 text-right">
+                    <td className="py-3 font-mono tabular-nums" data-label="Unit">{money(item.unitPriceCents)}</td>
+                    <td className="py-3 text-right" data-label="Line">
                       <span className="font-mono tabular-nums">{money(item.quantity * item.unitPriceCents)}</span>
                       {query.data.canEdit ? (
                         <button

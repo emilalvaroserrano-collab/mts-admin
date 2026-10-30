@@ -1,8 +1,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Switch from "@radix-ui/react-switch";
 import { cva, type VariantProps } from "class-variance-authority";
-import { X } from "lucide-react";
-import { type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes, type InputHTMLAttributes } from "react";
+import { LayoutGrid, List, X } from "lucide-react";
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes, type InputHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
 const buttonStyles = cva(
@@ -136,7 +136,7 @@ export function Modal({
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-40 bg-ink/40" />
-        <Dialog.Content className="fixed top-1/2 left-1/2 z-50 max-h-[calc(100vh-2rem)] w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-xl border border-line bg-surface p-5 shadow-[0_16px_40px_rgba(0,0,0,0.16)] outline-none">
+        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[92vh] w-full overflow-auto rounded-t-3xl border border-line bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.16)] outline-none sm:inset-x-auto sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-[min(36rem,calc(100%-2rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
           <div className="flex items-start justify-between gap-4">
             <div>
               <Dialog.Title className="text-base font-semibold text-ink">{title}</Dialog.Title>
@@ -193,11 +193,11 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div className="min-w-0">
+    <div className="flex min-w-0 flex-col items-center gap-3 text-center sm:flex-row sm:items-end sm:justify-between sm:text-left">
+      <div className="min-w-0 max-w-full">
         {eyebrow ? <p className="text-[11px] font-semibold tracking-[0.14em] text-subtle uppercase">{eyebrow}</p> : null}
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">{title}</h1>
-        {description ? <p className="mt-1 max-w-2xl text-sm text-muted">{description}</p> : null}
+        <h1 className="mt-1 break-words text-2xl font-semibold tracking-tight text-ink sm:text-[1.75rem]">{title}</h1>
+        {description ? <p className="mt-1 max-w-2xl break-words text-sm text-muted">{description}</p> : null}
       </div>
       {actions ? <div className="admin-actions flex flex-wrap gap-2">{actions}</div> : null}
     </div>
@@ -205,7 +205,33 @@ export function PageHeader({
 }
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={cn("rounded-xl border border-line bg-surface p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)]", className)}>{children}</section>;
+  return <section className={cn("grid min-w-0 max-w-full content-start gap-3 overflow-hidden rounded-xl border border-line bg-surface p-4 shadow-[0_1px_0_rgba(0,0,0,0.04)] break-words", className)}>{children}</section>;
+}
+
+export function useViewMode(key: string, fallback: "grid" | "list" = "grid") {
+  const [mode, setMode] = useState<"grid" | "list">(fallback);
+  useEffect(() => {
+    const saved = window.localStorage.getItem(key);
+    if (saved === "grid" || saved === "list") setMode(saved);
+  }, [key]);
+  function choose(next: "grid" | "list") {
+    setMode(next);
+    window.localStorage.setItem(key, next);
+  }
+  return [mode, choose] as const;
+}
+
+export function ViewSwitch({ mode, onChange }: { mode: "grid" | "list"; onChange: (mode: "grid" | "list") => void }) {
+  return (
+    <div className="flex shrink-0 rounded-lg border border-line bg-surface p-0.5" role="group" aria-label="Layout">
+      <button type="button" aria-pressed={mode === "grid"} aria-label="Grid view" onClick={() => onChange("grid")} className={mode === "grid" ? "grid size-11 place-items-center rounded-md bg-ink text-white md:size-8" : "grid size-11 place-items-center rounded-md text-muted md:size-8"}>
+        <LayoutGrid className="size-4" />
+      </button>
+      <button type="button" aria-pressed={mode === "list"} aria-label="List view" onClick={() => onChange("list")} className={mode === "list" ? "grid size-11 place-items-center rounded-md bg-ink text-white md:size-8" : "grid size-11 place-items-center rounded-md text-muted md:size-8"}>
+        <List className="size-4" />
+      </button>
+    </div>
+  );
 }
 
 export function Loading({ label = "Loading the desk" }: { label?: string }) {

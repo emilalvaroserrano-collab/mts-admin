@@ -26,7 +26,8 @@ export function stamp(iso: string) {
 }
 
 export function paymentLabel(method: string) {
-  if (method === "card") return "Card";
+  if (method === "card") return "Debit or credit card";
+  if (method === "pay_later") return "Order now, pay later";
   if (method === "invoice") return "Invoice";
   if (method === "purchase_order") return "Purchase order";
   if (method === "alternative") return "Alternative Payments";

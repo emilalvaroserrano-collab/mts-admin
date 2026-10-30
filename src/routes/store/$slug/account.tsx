@@ -99,7 +99,7 @@ function Account() {
   }
 
   if (account.isPending || !account.data) {
-    return <main className="px-4 py-16 text-center text-sm text-muted">Loading your account…</main>;
+    return <main className="grid min-h-48 place-items-center px-4 py-16 text-center text-sm text-muted">Loading your account…</main>;
   }
 
   const customer = account.data.customer;
@@ -107,20 +107,21 @@ function Account() {
 
   return (
     <main className="mx-auto grid max-w-5xl gap-8 px-4 py-10 lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <aside>
+      <aside className="grid content-start gap-2">
         <p className="text-xs uppercase tracking-[0.16em] text-muted">Account</p>
-        <h1 className="mt-2 text-2xl font-semibold tracking-tight">{customer.name || "Your profile"}</h1>
-        <p className="mt-1 text-sm text-muted">{customer.email}</p>
-        <button type="button" className="mt-4 text-sm text-muted underline-offset-2 hover:underline" onClick={() => signOut.mutate()}>
+        <h1 className="text-2xl font-semibold tracking-tight">{customer.name || "Your profile"}</h1>
+        <p className="text-sm text-muted">{customer.email}</p>
+        <p className="text-sm">{customer.payLater ? "Order now, pay later is on for this account." : "Payment is required before checkout."}</p>
+        <button type="button" className="w-fit text-sm text-muted underline-offset-2 hover:underline" onClick={() => signOut.mutate()}>
           Sign out
         </button>
       </aside>
       <div className="grid gap-8">
         <ProfileForm token={token} customer={customer} />
-        <section>
+        <section className="grid gap-3">
           <h2 className="text-lg font-semibold">Orders</h2>
           {account.data.orders.length === 0 ? <p className="mt-3 text-sm text-muted">No orders yet.</p> : null}
-          <ul className="mt-3 divide-y divide-line rounded-2xl border border-line">
+          <ul className="grid divide-y divide-line overflow-hidden rounded-2xl border border-line">
             {account.data.orders.map((order) => (
               <li key={order.id}>
                 <button type="button" className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm" onClick={() => setOpenId(order.id)}>
@@ -199,7 +200,7 @@ function ProfileForm({
 function OrderDetail({ order, slug }: { order: ShopOrder; slug: string }) {
   const reached = Math.max(0, SHIPMENT.indexOf(order.shipmentStatus as (typeof SHIPMENT)[number]));
   return (
-    <article className="mt-4 rounded-2xl border border-line p-4">
+    <article className="grid gap-4 rounded-2xl border border-line p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">{order.number}</h3>
@@ -211,7 +212,7 @@ function OrderDetail({ order, slug }: { order: ShopOrder; slug: string }) {
         </div>
         <p className="text-sm font-semibold tabular-nums">{money(order.totalCents)}</p>
       </div>
-      <ol className="mt-4 grid gap-2 sm:grid-cols-4">
+      <ol className="grid gap-2 sm:grid-cols-4">
         {SHIPMENT.map((step, index) => (
           <li key={step} className={index <= reached ? "rounded-lg bg-ink px-2 py-2 text-xs text-white" : "rounded-lg bg-[#f6f6f6] px-2 py-2 text-xs text-muted"}>
             {shipmentLabel(step)}
@@ -228,20 +229,20 @@ function OrderDetail({ order, slug }: { order: ShopOrder; slug: string }) {
       <p className="mt-2 text-sm text-muted">
         {[order.shipAddress, order.shipCity, order.shipRegion, order.shipPostal, order.shipCountry].filter(Boolean).join(", ")}
       </p>
-      <ul className="mt-3 divide-y divide-line text-sm">
+      <ul className="grid text-sm">
         {order.items.map((item) => (
-          <li key={item.sku} className="flex justify-between py-2">
+          <li key={item.sku} className="flex justify-between gap-3 border-t border-line py-2 first:border-t-0">
             <span>{item.quantity} × {item.name}</span>
             <span className="tabular-nums">{money(item.quantity * item.unitPriceCents)}</span>
           </li>
         ))}
       </ul>
       {order.paymentUrl ? (
-        <a href={order.paymentUrl} className="mt-3 inline-block text-sm underline" target="_blank" rel="noreferrer">
+        <a href={order.paymentUrl} className="inline-flex text-sm underline" target="_blank" rel="noreferrer">
           Payment link
         </a>
       ) : null}
-      <Link to="/store/$slug" params={{ slug }} className="mt-4 block text-sm text-muted">
+      <Link to="/store/$slug" params={{ slug }} className="text-sm text-muted">
         Back to the shop
       </Link>
     </article>

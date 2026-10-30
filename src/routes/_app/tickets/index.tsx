@@ -3,7 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { listTickets } from "@/lib/portal/api";
 import { ago } from "@/lib/portal/format";
 import { ticketSearch } from "@/lib/portal/ticket-search";
-import { ErrorNote, Loading, PageHeader, Select, StatusBadge } from "@/components/ui";
+import { ErrorNote, Loading, PageHeader, Select, StatusBadge, ViewSwitch, useViewMode } from "@/components/ui";
 
 const VIEWS = ["", "Pending Projects", "Pending Orders", "Need Invoice"];
 
@@ -37,18 +37,21 @@ function TicketsPage() {
       }),
   });
 
+  const [layout, setLayout] = useViewMode("mts-tickets-view");
+
   function setSearch(partial: Partial<typeof search>) {
     navigate({ search: (prev) => ({ ...prev, ...partial }) });
   }
 
   return (
-    <div>
+    <div className="grid gap-4">
       <PageHeader
         eyebrow="Zendesk"
         title="Tickets"
         description="Unresolved work, saved views, and the conversation stay tied to Zendesk when the account is connected."
       />
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center justify-center gap-2 md:justify-between">
+      <div className="flex flex-wrap justify-center gap-2 md:justify-start">
         {VIEWS.map((view) => (
           <button
             key={view || "all-views"}
@@ -64,7 +67,9 @@ function TicketsPage() {
           </button>
         ))}
       </div>
-      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <ViewSwitch mode={layout} onChange={setLayout} />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Select value={search.status} onChange={(event) => setSearch({ status: event.target.value })} aria-label="Status">
           <option value="unresolved">Unresolved</option>
           <option value="new">New</option>
@@ -97,7 +102,35 @@ function TicketsPage() {
       {query.isPending ? <Loading /> : null}
       {query.isError ? <ErrorNote message={query.error.message} /> : null}
       {query.data ? (
-        <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+        layout === "grid" ? (
+          <div className="grid justify-items-center gap-3 sm:grid-cols-2 sm:justify-items-stretch xl:grid-cols-3">
+            {query.data.tickets.length === 0 ? <p className="text-sm text-muted sm:col-span-2 xl:col-span-3">No tickets match this view.</p> : null}
+            {query.data.tickets.map((ticket) => (
+              <Link key={ticket.id} to="/tickets/$ticketId" params={{ ticketId: String(ticket.id) }} className="grid w-full max-w-md justify-items-center gap-2 rounded-2xl border border-line bg-surface p-4 text-center sm:max-w-none sm:justify-items-start sm:text-left">
+                <StatusBadge value={ticket.status} />
+                <p className="font-semibold">{ticket.subject}</p>
+                <p className="text-xs text-muted">{ticket.organizationName || "No company"} · {ticket.assignee || "Unassigned"}</p>
+                <p className="text-xs text-muted">{ticket.zendeskId ? `#${ticket.zendeskId}` : `P-${ticket.id}`} · {ago(ticket.updatedAt)}</p>
+              </Link>
+            ))}
+          </div>
+        ) : (
+        <>
+        <ul className="grid gap-2 md:hidden">
+          {query.data.tickets.map((ticket) => (
+            <li key={ticket.id}>
+              <Link to="/tickets/$ticketId" params={{ ticketId: String(ticket.id) }} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-line bg-surface px-4 py-3">
+                <span>
+                  <span className="block font-semibold">{ticket.subject}</span>
+                  <span className="mt-0.5 block text-xs text-muted">{ticket.organizationName || "No company"} · {ago(ticket.updatedAt)}</span>
+                </span>
+                <StatusBadge value={ticket.status} />
+              </Link>
+            </li>
+          ))}
+          {query.data.tickets.length === 0 ? <li className="py-6 text-center text-sm text-muted">No tickets match this view.</li> : null}
+        </ul>
+        <div className="hidden overflow-x-auto rounded-2xl border border-line bg-surface md:block">
           <table className="w-full min-w-[44rem] text-left text-sm">
             <thead className="text-xs text-muted">
               <tr>
@@ -111,7 +144,7 @@ function TicketsPage() {
             <tbody>
               {query.data.tickets.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-muted" colSpan={5}>
+                  <td className="stack-empty px-4 py-8 text-muted" colSpan={5}>
                     No tickets match this view.
                   </td>
                 </tr>
@@ -128,17 +161,19 @@ function TicketsPage() {
                       {ticket.category ? ` · ${ticket.category}` : ""}
                     </p>
                   </td>
-                  <td className="px-4 py-3">{ticket.organizationName || "—"}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3" data-label="Company">{ticket.organizationName || "—"}</td>
+                  <td className="px-4 py-3" data-label="Status">
                     <StatusBadge value={ticket.status} />
                   </td>
-                  <td className="px-4 py-3">{ticket.assignee || "Unassigned"}</td>
-                  <td className="px-4 py-3 text-muted">{ago(ticket.updatedAt)}</td>
+                  <td className="px-4 py-3" data-label="Assignee">{ticket.assignee || "Unassigned"}</td>
+                  <td className="px-4 py-3 text-muted" data-label="Updated">{ago(ticket.updatedAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        </>
+        )
       ) : null}
     </div>
   );

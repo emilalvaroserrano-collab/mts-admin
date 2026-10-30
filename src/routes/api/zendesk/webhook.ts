@@ -8,7 +8,7 @@ export const Route = createFileRoute("/api/zendesk/webhook")({
       POST: async ({ request }) => {
         const raw = await request.text();
         try {
-          verifyZendeskWebhook(request, raw);
+          await verifyZendeskWebhook(request, raw);
           const payload = raw ? JSON.parse(raw) : {};
           const sql = await getSql();
           const stored = await ingestZendeskWebhook(sql, payload);
