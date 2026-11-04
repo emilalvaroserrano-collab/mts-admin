@@ -8,16 +8,17 @@ import { getSessionHome } from "@/lib/portal/api";
 import { usePortalSession } from "@/lib/portal/use-portal-session";
 import { setShopToken } from "@/lib/portal/shop-session";
 import { useCart } from "@/lib/portal/store-cart";
+import { SarahWidget } from "@/components/sarah-widget";
 
 const NAV = [
-  { to: "/portal", label: "Home", icon: House, exact: true },
-  { to: "/portal/tickets", label: "Tickets", icon: Headphones },
-  { to: "/portal/shop", label: "Order", icon: ClipboardList },
-  { to: "/portal/orders", label: "My orders", icon: ClipboardList },
-  { to: "/portal/billing", label: "Billing", icon: Receipt },
-  { to: "/portal/complaints", label: "Complaints", icon: Headphones },
-  { to: "/portal/organization", label: "Organization", icon: House },
-  { to: "/portal/account", label: "Account", icon: Settings },
+  { to: "/portal", label: "Home", icon: House, exact: true, guide: "home" },
+  { to: "/portal/tickets", label: "Tickets", icon: Headphones, guide: "tickets" },
+  { to: "/portal/shop", label: "Order", icon: ClipboardList, guide: "order" },
+  { to: "/portal/orders", label: "My orders", icon: ClipboardList, guide: "orders" },
+  { to: "/portal/billing", label: "Billing", icon: Receipt, guide: "billing" },
+  { to: "/portal/complaints", label: "Complaints", icon: Headphones, guide: "complaints" },
+  { to: "/portal/organization", label: "Organization", icon: House, guide: "organization" },
+  { to: "/portal/account", label: "Account", icon: Settings, guide: "account" },
 ] as const;
 
 export function PortalShell({ children }: { children: ReactNode }) {
@@ -43,7 +44,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
             {NAV.map((item) => {
               const active = current?.to === item.to;
               return (
-                <Link key={item.to} to={item.to} className={active ? "shrink-0 rounded-lg bg-ink px-3 py-2 text-sm text-white" : "shrink-0 rounded-lg px-3 py-2 text-sm text-ink hover:bg-surface-2"}>
+                <Link key={item.to} to={item.to} data-guide={item.guide} className={active ? "shrink-0 rounded-lg bg-ink px-3 py-2 text-sm text-white" : "shrink-0 rounded-lg px-3 py-2 text-sm text-ink hover:bg-surface-2"}>
                   {item.label}
                 </Link>
               );
@@ -76,12 +77,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
               <button type="button" aria-label="Close menu" onClick={() => setMenu(false)}><X className="size-5" /></button>
             </div>
             {NAV.map((item) => (
-              <Link key={item.to} to={item.to} onClick={() => setMenu(false)} className="rounded-xl px-3 py-3 text-sm font-medium hover:bg-surface-2">{item.label}</Link>
+              <Link key={item.to} to={item.to} data-guide={item.guide} onClick={() => setMenu(false)} className="rounded-xl px-3 py-3 text-sm font-medium hover:bg-surface-2">{item.label}</Link>
             ))}
             <button type="button" className="rounded-xl px-3 py-3 text-left text-sm font-medium" onClick={() => { setMenu(false); setShopToken(""); void signOut("/login"); }}>Sign out</button>
           </div>
         </div>
       ) : null}
+      <SarahWidget />
     </div>
   );
 }

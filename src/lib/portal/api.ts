@@ -868,7 +868,7 @@ async function openWelcomeTicket(
   return { ticketId, zendeskId, warning };
 }
 
-async function filePortalTicket(
+export async function filePortalTicket(
   sql: Sql,
   input: { name: string; email: string; organizationId: number | null; subject: string; category: string; body: string },
 ) {
@@ -3978,6 +3978,12 @@ async function requirePortal(sql: Sql, token: string) {
   const row = await shopByToken(sql, token);
   if (!row) throw new Error("Sign in again.");
   return { row, access: await accessFor(sql, row) };
+}
+
+export async function loadPortalCustomer(token: string) {
+  const sql = await getSql();
+  const found = await requirePortal(sql, token);
+  return { sql, row: found.row, access: found.access };
 }
 
 export const getPortalSession = createServerFn({ method: "GET" })
