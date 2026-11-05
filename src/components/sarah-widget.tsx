@@ -10,7 +10,7 @@ type Line = { from: "sarah" | "you"; text: string };
 type Tour = { to: "/portal" | "/portal/tickets" | "/portal/tickets/new" | "/portal/shop" | "/portal/orders" | "/portal/billing" | "/portal/complaints" | "/portal/organization" | "/portal/account" | "/portal/my-services" | "/portal/quotes" | "/portal/notifications"; guide: string; label: string };
 type Gate = "idle" | "ringing" | "speaking" | "cooldown" | "listening";
 
-const GREETING = "Thank you for calling Manage Tech Service. This is Sarah. I have your account open. How may I help you?";
+const GREETING = "Thank you for calling Manage Tech Service. This is Sarah. How can I help you today?";
 
 function AgentMark({ className = "size-11" }: { className?: string }) {
   return (
@@ -153,6 +153,24 @@ export function SarahWidget() {
     });
   }
 
+  function speakBrowser(text: string) {
+    return new Promise<void>((resolve) => {
+      if (typeof window === "undefined" || !window.speechSynthesis) {
+        resolve();
+        return;
+      }
+      const utter = new SpeechSynthesisUtterance(text.replace(/\[[^\]]+\]/g, ""));
+      utter.rate = 1;
+      utter.pitch = 1;
+      const voice = window.speechSynthesis.getVoices().find((item) => /samantha|karen|moira|natural/i.test(item.name) && /en/i.test(item.lang));
+      if (voice) utter.voice = voice;
+      utter.onend = () => resolve();
+      utter.onerror = () => resolve();
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utter);
+    });
+  }
+
   async function playSarah(text: string, background = false) {
     stopMic();
     stopSpeaker();
@@ -165,18 +183,8 @@ export function SarahWidget() {
     }
     if (spoken.audio) {
       await playDocked(`data:audio/mpeg;base64,${spoken.audio}`);
-    } else if (typeof window !== "undefined" && window.speechSynthesis) {
-      await new Promise<void>((resolve) => {
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.rate = 0.94;
-        utter.pitch = 1;
-        const voice = window.speechSynthesis.getVoices().find((item) => /samantha|victoria|google us english|female/i.test(`${item.name} ${item.lang}`));
-        if (voice) utter.voice = voice;
-        utter.onend = () => resolve();
-        utter.onerror = () => resolve();
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utter);
-      });
+    } else {
+      await speakBrowser(text);
     }
     const interrupted = !live.current || gateRef.current !== "speaking";
     if (interrupted) {
@@ -184,7 +192,7 @@ export function SarahWidget() {
       return;
     }
     setPhase("cooldown");
-    await new Promise((resolve) => window.setTimeout(resolve, 650));
+    await new Promise((resolve) => window.setTimeout(resolve, 280));
     setPhase("idle");
   }
 
@@ -560,7 +568,7 @@ export function SarahWidget() {
               <button type="button" aria-label="Close support" onClick={close}><X className="size-4" /></button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { const hello = [{ from: "sarah" as const, text: "Hello, this is Sarah at Manage Tech Service. Tell me what you need and I will take care of it on your account." }]; linesRef.current = hello; setLines(hello); setMode("chat"); }} className="grid h-20 place-items-center gap-1 rounded-xl border border-line text-sm font-semibold">
+              <button type="button" onClick={() => { const hello = [{ from: "sarah" as const, text: "Hi! I'm Sarah with Manage Tech Service. What can I help you with?" }]; linesRef.current = hello; setLines(hello); setMode("chat"); }} className="grid h-20 place-items-center gap-1 rounded-xl border border-line text-sm font-semibold">
                 <Send className="size-5" />
                 Chat
               </button>

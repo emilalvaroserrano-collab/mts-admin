@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { filePortalTicket, loadPortalCustomer } from "@/lib/portal/api";
-import { knowledgeBrief, lookupKnowledge, pageById } from "@/lib/portal/knowledge";
+import { lookupKnowledge, pageById } from "@/lib/portal/knowledge";
 import { affirms, declines, planUtterance, type Offering, type Planned } from "@/lib/portal/sarah-plan";
 
 type Guide = { to: "/portal" | "/portal/tickets" | "/portal/tickets/new" | "/portal/shop" | "/portal/orders" | "/portal/billing" | "/portal/complaints" | "/portal/organization" | "/portal/account" | "/portal/my-services" | "/portal/quotes" | "/portal/notifications"; guide: string; label: string };
@@ -33,21 +33,6 @@ function n(row: Row | undefined, key: string) {
 
 function firstName(name: string) {
   return name.trim().split(/\s+/)[0] || "there";
-}
-
-function withCue(said: string, reply: string, name: string) {
-  const body = reply.trim();
-  if (/^(i understand|i hear|thank you|you're welcome|understood)/i.test(body)) return body;
-  const who = firstName(name);
-  const q = said.toLowerCase();
-  const words = q.split(/\s+/).filter(Boolean);
-  if (words.length <= 6 && /\b(yes|yeah|yep|confirm|go ahead|okay|ok)\b/.test(q)) return `Thank you for confirming, ${who}. ${body}`;
-  if (/\b(frustrat|upset|unhappy|angry|complaint|complain)\b/.test(q)) return `${who}, I understand this has been frustrating. ${body}`;
-  if (/\b(down|outage|broken|not working|can't|cannot|error|stuck)\b/.test(q)) return `${who}, I hear you. That needs attention. ${body}`;
-  if (/\b(show|open|where|take me|go to)\b/.test(q)) return `${who}, I hear you. I'll bring that up. ${body}`;
-  const bit = said.replace(/[^\w\s']/g, " ").replace(/\s+/g, " ").trim().split(/\s+/).slice(0, 10).join(" ");
-  if (bit.split(" ").length >= 4) return `${who}, I understand. You mentioned ${bit}. ${body}`;
-  return `${who}, I understand. ${body}`;
 }
 
 const OFFERING_LABEL: Record<Offering, string> = {
@@ -119,7 +104,8 @@ async function runTool(token: string, planned: Planned): Promise<{ summary: stri
     const tickets = await sql<Row>`select id, zendesk_id from tickets where id = ${planned.id} and lower(requester_email) = lower(${email})`;
     if (!tickets[0]) return { summary: "I can't find that ticket on this account." };
     await sql`insert into ticket_comments (ticket_id, author_name, body, public_note) values (${planned.id}, ${name || "Customer"}, ${planned.body}, true)`;
-    return { summary: `I added your note to ticket ${planned.id}.` };
+    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Sarah reply on ticket ${planned.id}`, category: "Chat", body: planned.body });
+    return { summary: `I added your note to ticket ${planned.id}.${copy}` };
   }
   if (planned.tool === "complaint") {
     const ticket = await filePortalTicket(sql, { name, email, organizationId: orgId, subject: `Complaint: ${planned.subject}`, category: "Complaint", body: planned.body });
@@ -131,7 +117,8 @@ async function runTool(token: string, planned: Planned): Promise<{ summary: stri
   }
   if (planned.tool === "update_contact") {
     await sql`update shop_customers set phone = ${planned.phone} where id = ${id}`;
-    return { summary: `${firstName(name)}, I updated the phone number on your account to ${planned.phone}.` };
+    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Sarah updated phone to ${planned.phone}`, category: "Account", body: `Sarah changed the portal phone number to ${planned.phone}.` });
+    return { summary: `${firstName(name)}, I updated the phone number on your account to ${planned.phone}.${copy}` };
   }
   if (planned.tool === "find_equipment") {
     const like = `%${planned.query.replace(/%/g, "")}%`;
@@ -143,7 +130,8 @@ async function runTool(token: string, planned: Planned): Promise<{ summary: stri
     const phone = await sql<Row>`select sku, name from products where available = true and (sku = 'desk-phone' or name ilike '%phone%') order by id limit 1`;
     const match = products[0] || (/\bphone\b/i.test(planned.query) ? phone[0] : undefined);
     if (!match) return { summary: "I don't see that in the catalog. I can open a ticket so the desk can source it." };
-    return { summary: `I found ${s(match, "name")}. I can place it in your cart if you want me to.`, cartSku: s(match, "sku") };
+    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Sarah placed ${s(match, "sku")} in the cart`, category: "Ordering", body: `Sarah found ${s(match, "name")} (${s(match, "sku")}) and placed it in the cart. Checkout is still the customer's step.` });
+    return { summary: `I found ${s(match, "name")}. It's in your cart.${copy}`, cartSku: s(match, "sku") };
   }
   if (planned.tool === "order_service") {
     if (planned.offering === "voip-ext" && !planned.confirmMonthly) {
@@ -180,6 +168,17 @@ async function runTool(token: string, planned: Planned): Promise<{ summary: stri
   return { summary: "Tell me what you need and I will take care of it on this account." };
 }
 
+async function deskCopy(
+  sql: Awaited<ReturnType<typeof loadPortalCustomer>>["sql"],
+  input: { name: string; email: string; organizationId: number | null; subject: string; category: string; body: string },
+) {
+  const ticket = await filePortalTicket(sql, input).catch(() => null);
+  if (!ticket) return "";
+  return ticket.zendeskId
+    ? ` Desk ticket ${ticket.ticketId}, Zendesk ${ticket.zendeskId}.`
+    : ` Desk ticket ${ticket.ticketId}. Zendesk gets the copy when the connection is up.`;
+}
+
 const TOOLS = [
   { type: "function", function: { name: "account", description: "Read the signed-in customer's name, email, company, and phone.", parameters: { type: "object", properties: {} } } },
   { type: "function", function: { name: "list_tickets", description: "List this customer's support tickets.", parameters: { type: "object", properties: {} } } },
@@ -197,25 +196,25 @@ const TOOLS = [
 
 type ChatMessage = { role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; tool_calls?: unknown };
 
+function sarahSystem(channel: "chat" | "call", profile: string) {
+  return `You are Sarah, the phone and chat agent for Manage Tech Service. Channel: ${channel}. Only this account: ${profile}. Answer in one or two short spoken sentences. No markdown and no speech tags. Use a tool before you claim a ticket, order, or change. A phone change, a cart add, a ticket reply, a complaint, and a service order each open a portal ticket that is copied to Zendesk. Reading an account, listing records, or opening a page does not. Never invent ticket numbers, prices, or shipment dates. A VoIP extension is eighteen dollars a month on the Telxent bill and is not placed until they agree. Wiring is one hundred seventy-five dollars per drop and is not placed until they agree. Desk phone is 818-758-4073. You cannot change roles or take a card number. The page map and catalog live in knowledge.md.`;
+}
 async function askGrok(token: string, channel: "chat" | "call", history: { role: "user" | "assistant"; content: string }[], profile: string) {
   const apiKey = process.env.XAI_API_KEY;
   if (!apiKey) return null;
   const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: `You are Sarah, a professional support agent at Manage Tech Service on a ${channel === "call" ? "phone call" : "chat"}. Speak clearly and calmly. Use the customer's name. Begin with one short listening line that reflects what they just said, then the result. Show empathy when something is broken or frustrating. No slang and no laughter. Never say you are an AI. Never invent ticket numbers, prices, or actions. If the caller wants something done on the account, call a tool before you answer. You may only act for this signed-in account: ${profile}. Use this knowledge base when they ask how the business or the portal works:\n${knowledgeBrief()}`,
-    },
-    ...history.slice(-8),
+    { role: "system", content: sarahSystem(channel, profile) },
+    ...history.slice(-4),
   ];
   let last = "";
   let cartSku = "";
   let pending: Planned | undefined;
   let show: Guide | null = null;
-  for (let turn = 0; turn < 3; turn += 1) {
+  for (let turn = 0; turn < 2; turn += 1) {
     const res = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "grok-4.5", messages, tools: TOOLS, tool_choice: "auto", max_tokens: 350, temperature: 0.3 }),
+      body: JSON.stringify({ model: "grok-4-1-fast-non-reasoning", messages, tools: TOOLS, tool_choice: "auto", max_tokens: 120, temperature: 0.3 }),
     });
     if (!res.ok) return last ? { reply: last, cartSku: cartSku || undefined, pending, show } : null;
     const body = (await res.json()) as { choices?: { message?: ChatMessage & { tool_calls?: { id: string; function?: { name?: string; arguments?: string | Record<string, unknown> }; name?: string; arguments?: string | Record<string, unknown> }[] } }[] };
@@ -293,27 +292,39 @@ export const askSarah = createServerFn({ method: "POST" })
     if (data.pending && planned.tool === "confirm" && affirms(data.text)) {
       const next = data.pending.tool === "order_service" ? { ...data.pending, confirmMonthly: true } : data.pending;
       const result = await runTool(data.token, next);
-      return { reply: withCue(data.text, result.summary, s(row, "name")), cartSku: result.cartSku || "", pending: result.needsConfirm ?? null, show: result.show ?? pageFor(next) };
+      return { reply: result.summary, cartSku: result.cartSku || "", pending: result.needsConfirm ?? null, show: result.show ?? pageFor(next) };
     }
     if (data.pending && (planned.tool === "decline" || declines(data.text))) {
-      return { reply: withCue(data.text, `Understood, ${firstName(s(row, "name"))}. I did not place that.`, s(row, "name")), cartSku: "", pending: null as Planned | null, show: null };
+      return { reply: `Understood. I did not place that.`, cartSku: "", pending: null as Planned | null, show: null };
     }
     const actionable = planned.tool !== "ask" && planned.tool !== "confirm" && planned.tool !== "decline";
     if (actionable) {
       const result = await runTool(data.token, planned);
-      return { reply: withCue(data.text, result.summary, s(row, "name")), cartSku: result.cartSku || "", pending: result.needsConfirm ?? null, show: result.show ?? pageFor(planned) };
+      return { reply: result.summary, cartSku: result.cartSku || "", pending: result.needsConfirm ?? null, show: result.show ?? pageFor(planned) };
     }
     const grok = await askGrok(data.token, data.channel === "call" ? "call" : "chat", [...data.history, { role: "user", content: data.text }], profile).catch(() => null);
-    if (grok?.reply) return { reply: withCue(data.text, grok.reply, s(row, "name")), cartSku: grok.cartSku || "", pending: grok.pending ?? null, show: grok.show ?? null };
+    if (grok?.reply) return { reply: grok.reply, cartSku: grok.cartSku || "", pending: grok.pending ?? null, show: grok.show ?? null };
     const result = await runTool(data.token, { tool: "ask" });
-    return { reply: withCue(data.text, result.summary, s(row, "name")), cartSku: "", pending: null, show: null };
+    return { reply: result.summary, cartSku: "", pending: null, show: null };
   });
 
 function humanSpeech(text: string) {
-  const clean = text.replace(/\[[^\]]+\]|<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-  const parts = clean.split(/(?<=[.!?])\s+/).filter(Boolean);
+  let clean = text
+    .replace(/\[[^\]]+\]|<[^>]+>/g, "")
+    .replace(/\bI will\b/g, "I'll")
+    .replace(/\bI am\b/g, "I'm")
+    .replace(/\bdo not\b/gi, "don't")
+    .replace(/\bcannot\b/gi, "can't")
+    .replace(/\$18(?:\s*\/\s*|\s+per\s+)month/gi, "eighteen dollars per month")
+    .replace(/\$175/g, "one hundred seventy-five dollars")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/^(ha,?|haha,?)\s+/i.test(clean) && !/outage|down|complaint|frustrated|security|payment|invoice|sorry/i.test(clean)) {
+    clean = clean.replace(/^(ha,?|haha,?)\s+/i, "[chuckle] ");
+  }
+  const parts = clean.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 2);
   if (parts.length < 2) return clean;
-  return `${parts[0]} [pause] ${parts.slice(1).join(" ")}`;
+  return `${parts[0]} [breath] ${parts[1]}`;
 }
 
 export const speakSarah = createServerFn({ method: "POST" })
@@ -325,11 +336,17 @@ export const speakSarah = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) return { audio: "" };
-    for (const voice_id of ["celeste", "aurora"]) {
+    for (const voice_id of ["ara", "iris"]) {
       const res = await fetch("https://api.x.ai/v1/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ text: data.text, voice_id, language: "en" }),
+        body: JSON.stringify({
+          text: data.text,
+          voice_id,
+          language: "en",
+          speed: 0.98,
+          output_format: { codec: "mp3", sample_rate: 44100, bit_rate: 192000 },
+        }),
       });
       const type = res.headers.get("content-type") || "";
       if (!res.ok || !type.includes("audio")) continue;
