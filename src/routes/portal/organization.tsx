@@ -26,7 +26,7 @@ function OrganizationPage() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Could not save."),
   });
   return (
-    <form className="mx-auto grid w-full max-w-lg gap-3" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+    <form className="grid w-full gap-3" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <h1 className="text-2xl font-semibold tracking-tight">My organization</h1>
       <p className="text-sm text-muted">You only see this company. Saving a change opens a ticket for review.</p>
       <input value={business} onChange={(event) => setBusiness(event.target.value)} required placeholder="Company name" aria-label="Company name" className="h-11 rounded-xl border border-line bg-surface px-3" />

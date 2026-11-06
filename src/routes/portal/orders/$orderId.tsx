@@ -16,7 +16,7 @@ function OrderDetail() {
   if (account.isPending) return <p className="text-sm text-muted">Opening the order…</p>;
   if (!order) return <p className="text-sm text-muted">That order is not on this account.</p>;
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-4">
+    <div className="grid w-full gap-4">
       <Link to="/portal/orders" className="text-sm text-muted">All orders</Link>
       <h1 className="text-2xl font-semibold tracking-tight">{order.number}</h1>
       <p className="text-sm text-muted">{order.status} · Shipment {order.shipmentStatus} · Payment {order.paymentMethod || "unpaid"}</p>

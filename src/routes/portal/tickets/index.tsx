@@ -9,7 +9,7 @@ function TicketList() {
   const session = usePortalSession();
   const tickets = session.data?.tickets ?? [];
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-4">
+    <div className="grid w-full gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Support tickets</h1>
         <Link to="/portal/tickets/new" className="inline-flex h-11 items-center rounded-xl bg-ink px-4 text-sm font-semibold text-white">New ticket</Link>

@@ -19,7 +19,7 @@ function BillingPage() {
   }
   const orders = account.data?.orders ?? [];
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-3">
+    <div className="grid w-full gap-3">
       <h1 className="text-2xl font-semibold tracking-tight">Billing</h1>
       <p className="text-sm text-muted">
         {session.data?.access.canDefer ? "This account may be invoiced. An unpaid invoice is not treated as paid." : "This account pays at checkout. Invoice purchasing is not approved."}

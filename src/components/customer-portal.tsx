@@ -15,12 +15,14 @@ const NAV = [
   { to: "/portal", label: "Home", icon: House, exact: true, guide: "home" },
   { to: "/portal/tickets", label: "Tickets", icon: Headphones, guide: "tickets" },
   { to: "/portal/shop", label: "Order", icon: ClipboardList, guide: "order" },
-  { to: "/portal/orders", label: "My orders", icon: ClipboardList, guide: "orders" },
+  { to: "/portal/orders", label: "Orders", icon: ClipboardList, guide: "orders" },
   { to: "/portal/billing", label: "Billing", icon: Receipt, guide: "billing" },
   { to: "/portal/complaints", label: "Complaints", icon: Headphones, guide: "complaints" },
   { to: "/portal/organization", label: "Organization", icon: House, guide: "organization" },
   { to: "/portal/account", label: "Account", icon: Settings, guide: "account" },
 ] as const;
+
+const MOBILE_TABS = ["/portal", "/portal/tickets", "/portal/shop", "/portal/billing", "/portal/account"] as const;
 
 export function PortalShell({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (state) => state.location.pathname });
@@ -41,14 +43,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const count = cart.reduce((sum, line) => sum + line.quantity, 0);
 
   return (
-    <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)] bg-bg text-ink">
-      <header className="sticky top-0 z-20 border-b border-line bg-surface">
-        <div className="mx-auto grid h-16 w-full max-w-6xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4">
-          <Link to="/portal" className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-white">MT</span>
-            <span className="hidden text-sm font-semibold sm:inline">MTS User Portal</span>
+    <div className="portal-stage grid min-h-dvh grid-rows-[auto_minmax(0,1fr)] bg-bg text-ink">
+      <header className="fixed inset-x-0 top-0 z-30 border-b border-line bg-surface/95 backdrop-blur md:sticky" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+        <div className="mx-auto grid h-14 w-full max-w-6xl grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-4 md:h-16 md:gap-3 md:px-8">
+          <Link to="/portal" className="flex min-w-0 items-center gap-2 md:hidden">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-ink text-[11px] font-semibold text-white">MT</span>
+            <span className="truncate text-sm font-semibold">{current?.label ?? "MTS"}</span>
           </Link>
-          <nav className="hidden items-center gap-1 overflow-x-auto md:flex" aria-label="Customer">
+          <nav className="hidden min-w-0 items-center gap-1 overflow-x-auto md:col-start-1 md:flex" aria-label="Customer">
             {NAV.map((item) => {
               const active = current?.to === item.to;
               return (
@@ -58,15 +60,15 @@ export function PortalShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="flex items-center gap-1">
-            <Link to="/portal/shop" className="relative grid size-11 place-items-center rounded-xl" aria-label="Order">
+          <div className="col-start-3 flex shrink-0 items-center justify-end">
+            <Link to="/portal/shop" className="relative hidden size-11 place-items-center rounded-xl md:grid" aria-label="Order">
               <ClipboardList className="size-5" />
               {count > 0 ? <span className="absolute top-1 right-1 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-white">{count}</span> : null}
             </Link>
-            <Link to="/portal/notifications" className="grid size-11 place-items-center rounded-xl" aria-label="Notifications"><Bell className="size-5" /></Link>
+            <Link to="/portal/notifications" className="hidden size-11 place-items-center rounded-xl md:grid" aria-label="Notifications"><Bell className="size-5" /></Link>
             <SarahHeaderButton />
-            {home.data?.destination === "admin" ? <a href="/" className="hidden px-2 text-xs font-semibold text-accent sm:inline">Admin</a> : null}
-            <button type="button" className="grid size-11 place-items-center rounded-xl md:hidden" aria-label="Open menu" onClick={() => setMenu(true)}>
+            {home.data?.destination === "admin" ? <a href="/" className="hidden px-2 text-xs font-semibold text-accent md:inline">Admin</a> : null}
+            <button type="button" className="grid size-10 place-items-center rounded-xl md:hidden" aria-label="Open menu" onClick={() => setMenu(true)}>
               <Menu className="size-5" />
             </button>
             <button type="button" className="hidden size-11 place-items-center rounded-xl md:grid" aria-label="Sign out" onClick={() => { setShopToken(""); void signOut("/login"); }}>
@@ -74,33 +76,53 @@ export function PortalShell({ children }: { children: ReactNode }) {
             </button>
           </div>
         </div>
-        <p className="mx-auto hidden w-full max-w-6xl truncate px-4 pb-2 text-xs text-muted md:block">{session.data?.organization || session.data?.business || user?.primaryEmail || name}</p>
       </header>
       {sarah.data?.banner ? <p className="border-b border-[#ead7a1] bg-[#fff7e8] px-4 py-2 text-center text-sm text-[#6d5105]">{sarah.data.banner}</p> : null}
-      <main className="min-w-0 px-4 py-5 md:px-6">{children}</main>
+      <main className="mx-auto min-w-0 w-full max-w-6xl px-4 pt-[calc(4.75rem+env(safe-area-inset-top))] pb-[calc(5.5rem+env(safe-area-inset-bottom))] md:px-8 md:py-8 md:pb-8">{children}</main>
       {menu ? (
         <div className="fixed inset-0 z-40 md:hidden">
           <button className="absolute inset-0 bg-ink/40" aria-label="Close" onClick={() => setMenu(false)} />
-          <div className="absolute inset-x-0 top-0 grid gap-1 bg-surface p-4 shadow-lg">
-            <div className="flex items-center justify-between">
-              <p className="truncate text-sm font-semibold">{name}</p>
-              <button type="button" aria-label="Close menu" onClick={() => setMenu(false)}><X className="size-5" /></button>
+          <div className="absolute inset-x-0 top-0 grid max-h-dvh gap-1 overflow-y-auto bg-surface p-4 shadow-lg" style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{name}</p>
+                <p className="truncate text-xs text-muted">{session.data?.organization || session.data?.business || user?.primaryEmail || ""}</p>
+              </div>
+              <button type="button" aria-label="Close menu" onClick={() => setMenu(false)} className="grid size-10 shrink-0 place-items-center"><X className="size-5" /></button>
             </div>
             {NAV.map((item) => (
               <Link key={item.to} to={item.to} data-guide={item.guide} onClick={() => setMenu(false)} className="rounded-xl px-3 py-3 text-sm font-medium hover:bg-surface-2">{item.label}</Link>
             ))}
+            <Link to="/portal/notifications" onClick={() => setMenu(false)} className="rounded-xl px-3 py-3 text-sm font-medium hover:bg-surface-2">Notifications</Link>
             <button type="button" className="rounded-xl px-3 py-3 text-left text-sm font-medium" onClick={() => { setMenu(false); setShopToken(""); void signOut("/login"); }}>Sign out</button>
           </div>
         </div>
       ) : null}
       <SarahWidget />
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-line bg-surface px-1 pt-1 md:hidden" style={{ paddingBottom: "max(0.35rem, env(safe-area-inset-bottom))" }} aria-label="Portal">
+        {MOBILE_TABS.map((to) => {
+          const item = NAV.find((entry) => entry.to === to);
+          if (!item) return null;
+          const Icon = item.icon;
+          const active = "exact" in item && item.exact ? path === item.to : path === item.to || path.startsWith(`${item.to}/`);
+          return (
+            <Link key={to} to={item.to} data-guide={item.guide} aria-current={active ? "page" : undefined} className={active ? "grid min-h-14 place-items-center gap-0.5 text-ink" : "grid min-h-14 place-items-center gap-0.5 text-muted"}>
+              <span className="relative">
+                <Icon className="size-5" strokeWidth={active ? 2.25 : 1.75} />
+                {item.to === "/portal/shop" && count > 0 ? <span className="absolute -top-1.5 -right-2 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-white">{count}</span> : null}
+              </span>
+              <span className="text-[11px] font-medium">{item.label}</span>
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
 
 export function Locked({ title, body }: { title: string; body: string }) {
   return (
-    <section className="mx-auto grid max-w-lg gap-2 rounded-2xl border border-line bg-surface p-5">
+    <section className="grid w-full gap-2 rounded-2xl border border-line bg-surface p-5 shadow-sm">
       <h1 className="text-lg font-semibold">{title}</h1>
       <p className="text-sm text-muted">{body}</p>
     </section>

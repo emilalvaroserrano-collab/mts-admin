@@ -22,7 +22,7 @@ function QuotesPage() {
     return <Locked title="Quotes are not open yet" body="An admin approves service ordering before a quote can be requested." />;
   }
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-3">
+    <div className="grid w-full gap-3">
       <h1 className="text-2xl font-semibold tracking-tight">Quotes and requests</h1>
       {(mine.data ?? []).map((item) => (
         <article key={item.id} className="rounded-xl border border-line bg-surface px-4 py-3 text-sm">

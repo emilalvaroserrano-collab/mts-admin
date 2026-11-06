@@ -72,7 +72,7 @@ function OrderPage() {
   });
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl gap-4">
+    <div className="grid w-full gap-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Order</h1>
         <p className="text-sm text-muted">Equipment from the catalog, or a service for the office.</p>

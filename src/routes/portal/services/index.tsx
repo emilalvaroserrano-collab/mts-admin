@@ -22,7 +22,7 @@ function PortalServices() {
   const canOrder = Boolean(access?.canOrderIt || access?.canOrderPhone);
 
   return (
-    <div className="mx-auto grid w-full max-w-5xl gap-4">
+    <div className="grid w-full gap-4">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">IT services</h1>
         <p className="mt-1 text-sm text-muted">

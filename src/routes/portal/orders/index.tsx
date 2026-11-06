@@ -19,7 +19,7 @@ function OrdersPage() {
   }
   const orders = account.data?.orders ?? [];
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-3">
+    <div className="grid w-full gap-3">
       <h1 className="text-2xl font-semibold tracking-tight">My orders</h1>
       {orders.map((order) => (
         <Link key={order.id} to="/portal/orders/$orderId" params={{ orderId: String(order.id) }} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm">

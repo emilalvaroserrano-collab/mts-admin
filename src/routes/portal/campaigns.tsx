@@ -11,7 +11,7 @@ function CampaignsPage() {
   const token = useShopToken();
   const campaigns = useQuery({ queryKey: ["campaigns", token], queryFn: () => listCampaigns({ data: token }), enabled: Boolean(token) });
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-3">
+    <div className="grid w-full gap-3">
       <h1 className="text-2xl font-semibold tracking-tight">Campaigns</h1>
       {(campaigns.data ?? []).map((item) => (
         <article key={item.id} className="grid gap-2 rounded-xl border border-line bg-surface p-4">

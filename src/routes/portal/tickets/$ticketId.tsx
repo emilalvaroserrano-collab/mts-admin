@@ -43,7 +43,7 @@ function TicketDetail() {
   if (detail.isError || !ticket) return <p className="text-sm text-bad">{detail.error instanceof Error ? detail.error.message : "Ticket not found."}</p>;
 
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-4">
+    <div className="grid w-full gap-4">
       <Link to="/portal/tickets" className="text-sm text-muted">All tickets</Link>
       <div className="flex items-start justify-between gap-3">
         <div>

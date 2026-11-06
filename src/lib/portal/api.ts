@@ -981,7 +981,7 @@ export const openPortalFromAuth = createServerFn({ method: "GET" })
     await sql`
       update shop_customers set
         session_token = ${token},
-        session_expires = now() + interval '12 hours',
+        session_expires = now() + interval '400 days',
         name = ${name},
         email_verified = case when ${verified} then true else email_verified end
       where email = ${email}
@@ -3851,7 +3851,9 @@ async function shopByToken(sql: Sql, token: string) {
     where session_token = ${token} and session_expires > now()
     limit 1
   `;
-  return rows[0];
+  const row = rows[0];
+  if (row) await sql`update shop_customers set session_expires = now() + interval '400 days' where id = ${n(row, "id")}`;
+  return row;
 }
 
 async function notifyCustomer(sql: Sql, customerId: number | null, title: string, body: string, href: string) {
@@ -3913,7 +3915,7 @@ export const shopRegister = createServerFn({ method: "POST" })
     const token = await newShopToken();
     await sql`
       insert into shop_customers (email, name, password_hash, session_token, session_expires, role_id, grant_shop, grant_services, grant_invoice)
-      values (${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${token}, now() + interval '12 hours', 'regular', false, false, false)
+      values (${data.email}, ${data.name}, ${await hashShopPassword(data.password)}, ${token}, now() + interval '400 days', 'regular', false, false, false)
     `;
     const shopOrg = await sql<Row>`select id from organizations where domain = 'shop.managetech.example' limit 1`;
     await openWelcomeTicket(sql, {
@@ -3943,7 +3945,7 @@ export const shopLogin = createServerFn({ method: "POST" })
     }
     if (!b(row, "email_verified")) throw new Error("Verify your email before signing in.");
     const token = await newShopToken();
-    await sql`update shop_customers set session_token = ${token}, session_expires = now() + interval '12 hours' where id = ${n(row, "id")}`;
+    await sql`update shop_customers set session_token = ${token}, session_expires = now() + interval '400 days' where id = ${n(row, "id")}`;
     return { token, email: s(row, "email"), name: s(row, "name") };
   });
 
@@ -4353,7 +4355,7 @@ export const portalVerify = createServerFn({ method: "POST" })
         verify_code = '',
         verify_attempts = 0,
         session_token = ${token},
-        session_expires = now() + interval '12 hours'
+        session_expires = now() + interval '400 days'
       where id = ${n(row, "id")} and verify_code = ${data.code}
     `;
     await upsertZendeskUser(sql, { name: s(row, "name"), email: data.email, kind: "shop" }).catch(() => "");

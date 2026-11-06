@@ -28,7 +28,7 @@ function AccountPage() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Could not save."),
   });
   return (
-    <form className="mx-auto grid w-full max-w-lg gap-3" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
+    <form className="grid w-full gap-3" onSubmit={(event) => { event.preventDefault(); save.mutate(); }}>
       <h1 className="text-2xl font-semibold tracking-tight">Account</h1>
       <p className="text-sm text-muted">{user?.primaryEmail || customer?.email}. Password changes stay with the sign-in provider you used.</p>
       <input value={name} onChange={(event) => setName(event.target.value)} required placeholder="Name" aria-label="Name" className="h-11 rounded-xl border border-line bg-surface px-3" />

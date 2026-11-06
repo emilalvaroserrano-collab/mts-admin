@@ -44,7 +44,7 @@ function NewTicket() {
 
   return (
     <form
-      className="mx-auto grid w-full max-w-3xl gap-3"
+      className="grid w-full gap-3"
       onSubmit={(event) => {
         event.preventDefault();
         setNotice("");

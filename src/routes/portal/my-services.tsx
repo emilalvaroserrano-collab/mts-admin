@@ -18,7 +18,7 @@ function MyServices() {
   }
   const active = (mine.data ?? []).filter((item) => item.status === "approved" || item.status === "provisioned");
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-3">
+    <div className="grid w-full gap-3">
       <h1 className="text-2xl font-semibold tracking-tight">My active services</h1>
       {active.map((item) => (
         <article key={item.id} className="rounded-xl border border-line bg-surface px-4 py-3 text-sm">

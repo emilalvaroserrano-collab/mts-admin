@@ -3,7 +3,7 @@ import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient, authEnabled, authReturnUrl, GROK_PROVIDERS, signIn } from "@/lib/auth/client";
 import { getSignInOptions } from "@/lib/auth/options";
-import { getSessionHome, saveCustomerSignup } from "@/lib/portal/api";
+import { saveCustomerSignup } from "@/lib/portal/api";
 import { useCurrentUserState } from "@/lib/auth/use-current-user";
 import { Boot, Button, Field, Input } from "@/components/ui";
 
@@ -48,15 +48,10 @@ function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const options = useQuery({ queryKey: ["sign-in-options"], queryFn: () => getSignInOptions() });
-  const home = useQuery({
-    queryKey: ["session-home", user?.id],
-    queryFn: () => getSessionHome(),
-    enabled: Boolean(user),
-  });
   const auth0 = Boolean(options.data?.auth0);
 
-  if (isPending || (user && home.isPending)) return <Boot />;
-  if (user) return <Navigate to={home.data?.destination === "admin" ? "/" : "/portal"} />;
+  if (isPending) return <Boot />;
+  if (user) return <Navigate to="/portal" />;
 
   async function startProvider(providerId: string) {
     setError("");
@@ -84,14 +79,13 @@ function LoginPage() {
           data: { business, phone, address, city, interests },
         });
       } else {
-        const result = await authClient.signIn.email({ email, password, callbackURL: "/portal" });
+        const result = await authClient.signIn.email({ email, password, callbackURL: "/portal", rememberMe: true });
         if (result.error) {
           setError(result.error.message ?? "Could not sign in.");
           return;
         }
       }
-      const next = await getSessionHome();
-      navigate({ to: next.destination === "admin" ? "/" : "/portal" });
+      navigate({ to: "/portal" });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not sign in.");
     } finally {

@@ -37,7 +37,7 @@ function ServiceDetail() {
   const phone = item.kind === "phone";
 
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-4">
+    <div className="grid w-full gap-4">
       <Link to="/portal/services" className="text-sm text-muted">All services</Link>
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-accent">{item.category}</p>

@@ -30,7 +30,7 @@ function ComplaintsPage() {
     onError: (error) => setNotice(error instanceof Error ? error.message : "Could not send that."),
   });
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-4">
+    <div className="grid w-full gap-4">
       <h1 className="text-2xl font-semibold tracking-tight">Complaints and feedback</h1>
       <form className="grid gap-3 rounded-xl border border-line bg-surface p-4" onSubmit={(event) => { event.preventDefault(); send.mutate(); }}>
         <select value={kind} onChange={(event) => setKind(event.target.value)} aria-label="Type" className="h-11 rounded-xl border border-line px-3">

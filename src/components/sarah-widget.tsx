@@ -67,7 +67,6 @@ export function SarahWidget() {
   const [seconds, setSeconds] = useState(0);
   const [error, setError] = useState("");
   const [heard, setHeard] = useState("");
-  const hearGen = useRef(0);
   const [tour, setTour] = useState<Tour | null>(null);
   const [box, setBox] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   const live = useRef(false);
@@ -79,9 +78,11 @@ export function SarahWidget() {
   const recRef = useRef<SpeechRec | null>(null);
   const earRef = useRef<Ear | null>(null);
   const ringRef = useRef<AudioContext | null>(null);
+  const officeRef = useRef<AudioContext | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const linesRef = useRef<Line[]>([]);
   const speakGen = useRef(0);
+  const pendingRef = useRef("");
   const actionRef = useRef("");
   const [actionId, setActionId] = useState("");
   const [quote, setQuote] = useState<{ title: string; detail: string; amount: string } | null>(null);
@@ -107,31 +108,26 @@ export function SarahWidget() {
     const ear = earRef.current;
     earRef.current = null;
     if (!ear) return;
-    window.clearInterval(ear.timer);
-    if (ear.recorder && ear.recorder.state !== "inactive") {
-      ear.recorder.onstop = null;
-      ear.recorder.stop();
+    if (ear.processor) {
+      ear.processor.onaudioprocess = null;
+      ear.processor.disconnect();
     }
+    ear.mute?.disconnect();
+    ear.source.disconnect();
     ear.stream.getTracks().forEach((track) => track.stop());
     if (ear.ctx.state !== "closed") void ear.ctx.close().catch(() => undefined);
   }
 
   function stopMic() {
-    hearGen.current += 1;
     const rec = recRef.current;
     recRef.current = null;
     try { rec?.abort(); } catch { try { rec?.stop(); } catch { /* already closed */ } }
     const ear = earRef.current;
-    if (ear) {
-      window.clearInterval(ear.timer);
-      ear.timer = 0;
-      ear.closing = true;
-      if (ear.recorder && ear.recorder.state !== "inactive") {
-        ear.recorder.onstop = null;
-        try { ear.recorder.stop(); } catch { /* already stopped */ }
-      }
-      ear.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
-    }
+    if (!ear) return;
+    ear.closing = true;
+    ear.speaking = false;
+    ear.playback = false;
+    ear.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
     if (gateRef.current === "listening") setPhase("idle");
   }
 
@@ -142,6 +138,63 @@ export function SarahWidget() {
     audio.onerror = null;
     audio.pause();
     window.speechSynthesis?.cancel();
+  }
+
+  function stopOffice() {
+    const ctx = officeRef.current;
+    officeRef.current = null;
+    if (ctx && ctx.state !== "closed") void ctx.close().catch(() => undefined);
+  }
+
+  function startOffice() {
+    stopOffice();
+    const ctx = new AudioContext();
+    officeRef.current = ctx;
+    const bed = ctx.createGain();
+    bed.gain.value = 0.035;
+    bed.connect(ctx.destination);
+    const seconds = 3;
+    const length = Math.floor(ctx.sampleRate * seconds);
+    const room = ctx.createBuffer(1, length, ctx.sampleRate);
+    const air = room.getChannelData(0);
+    let brown = 0;
+    for (let index = 0; index < length; index += 1) {
+      brown = (brown + 0.02 * (Math.random() * 2 - 1)) / 1.02;
+      air[index] = brown * 3.2;
+    }
+    const roomSrc = ctx.createBufferSource();
+    roomSrc.buffer = room;
+    roomSrc.loop = true;
+    const low = ctx.createBiquadFilter();
+    low.type = "lowpass";
+    low.frequency.value = 380;
+    roomSrc.connect(low);
+    low.connect(bed);
+    roomSrc.start();
+    const murmur = ctx.createBuffer(1, length, ctx.sampleRate);
+    const voices = murmur.getChannelData(0);
+    for (let index = 0; index < length; index += 1) voices[index] = Math.random() * 2 - 1;
+    const murmurSrc = ctx.createBufferSource();
+    murmurSrc.buffer = murmur;
+    murmurSrc.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = "bandpass";
+    band.frequency.value = 860;
+    band.Q.value = 0.6;
+    const murmurGain = ctx.createGain();
+    murmurGain.gain.value = 0.01;
+    const sway = ctx.createOscillator();
+    sway.frequency.value = 0.12;
+    const swayGain = ctx.createGain();
+    swayGain.gain.value = 0.006;
+    sway.connect(swayGain);
+    swayGain.connect(murmurGain.gain);
+    murmurSrc.connect(band);
+    band.connect(murmurGain);
+    murmurGain.connect(ctx.destination);
+    murmurSrc.start();
+    sway.start();
+    void ctx.resume();
   }
 
   function unlockAudio() {
@@ -162,6 +215,7 @@ export function SarahWidget() {
       };
       audio.onended = done;
       audio.onerror = done;
+      audio.volume = 1;
       audio.src = src;
       void audio.play().catch(done);
     });
@@ -186,47 +240,48 @@ export function SarahWidget() {
   }
 
   async function playSarah(text: string, background = false) {
-    stopMic();
     stopSpeaker();
     spokenRef.current = text;
+    const mine = speakGen.current;
     setPhase("speaking");
     const spoken = await speakSarah({ data: { text } }).catch(() => ({ audio: "" }));
-    if (!background && !live.current) {
-      setPhase("idle");
-      return;
-    }
-    if (spoken.audio) {
-      await playDocked(`data:audio/mpeg;base64,${spoken.audio}`);
-    } else {
-      await speakBrowser(text);
-    }
-    const interrupted = !live.current || gateRef.current !== "speaking";
-    if (interrupted) {
+    if (speakGen.current !== mine || (!background && !live.current)) {
       if (!live.current) setPhase("idle");
       return;
     }
-    setPhase("cooldown");
-    await new Promise((resolve) => window.setTimeout(resolve, 80));
-    setPhase("idle");
+    if (pendingRef.current) return;
+    const ear = earRef.current;
+    if (ear) ear.playback = true;
+    try {
+      if (spoken.audio) await playDocked(`data:audio/mpeg;base64,${spoken.audio}`);
+      else await speakBrowser(text);
+    } finally {
+      if (ear) ear.playback = false;
+    }
+    if (speakGen.current !== mine || !live.current || gateRef.current !== "speaking") {
+      if (!live.current) setPhase("idle");
+      return;
+    }
+    setPhase("listening");
   }
 
   function listen() {
-    if (!live.current || mutedRef.current || busyRef.current) return;
-    if (gateRef.current === "ringing" || gateRef.current === "speaking" || gateRef.current === "cooldown" || gateRef.current === "listening") return;
+    if (!live.current || mutedRef.current) return;
+    if (gateRef.current === "ringing") return;
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) {
       void listenWithVad();
       return;
     }
-    const gen = hearGen.current;
+    if (recRef.current) return;
     const rec = new Recognition();
     rec.lang = "en-US";
     rec.interimResults = true;
     rec.continuous = true;
     recRef.current = rec;
-    setPhase("listening");
+    if (gateRef.current !== "speaking") setPhase("listening");
     rec.onresult = (event) => {
-      if (hearGen.current !== gen || gateRef.current === "speaking") return;
+      if (!live.current || mutedRef.current) return;
       let finalText = "";
       let interim = "";
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -237,113 +292,141 @@ export function SarahWidget() {
       if (interim.trim()) setHeard(interim.trim());
       const said = finalText.trim();
       if (!said || isEcho(said, spokenRef.current)) return;
-      setHeard("");
-      stopMic();
+      setHeard(said);
+      if (gateRef.current === "speaking") {
+        speakGen.current += 1;
+        stopSpeaker();
+        setPhase("listening");
+      }
+      if (busyRef.current) {
+        pendingRef.current = said;
+        return;
+      }
       void turn(said, "call");
     };
     rec.onerror = (event) => {
-      if (hearGen.current !== gen) return;
+      if (!live.current) return;
       if (event.error === "not-allowed") {
         setError("The microphone is blocked. You can still type.");
-        stopMic();
         return;
       }
       if (event.error === "no-speech" || event.error === "aborted") return;
+      if (event.error === "audio-capture") {
+        recRef.current = null;
+        void listenWithVad();
+      }
     };
     rec.onend = () => {
-      if (recRef.current === rec) recRef.current = null;
-      if (hearGen.current !== gen) return;
-      if (gateRef.current === "listening") setPhase("idle");
-      window.setTimeout(() => {
-        if (hearGen.current === gen && live.current && !mutedRef.current && !busyRef.current && gateRef.current === "idle") listen();
-      }, 60);
+      if (recRef.current !== rec) return;
+      recRef.current = null;
+      if (live.current && !mutedRef.current && gateRef.current !== "ringing") window.setTimeout(() => listen(), 60);
     };
-    try { rec.start(); } catch { setPhase("idle"); void listenWithVad(); }
+    try { rec.start(); } catch {
+      recRef.current = null;
+      void listenWithVad();
+    }
   }
 
   async function listenWithVad() {
     try {
       const ear = earRef.current ?? await openEar();
       earRef.current = ear;
-      if (!live.current || mutedRef.current || busyRef.current) {
+      if (!live.current || mutedRef.current) {
         if (!live.current) stopEar();
         return;
       }
       ear.stream.getAudioTracks().forEach((track) => { track.enabled = true; });
-      ear.speaking = false;
+      if (ear.ctx.state === "suspended") await ear.ctx.resume();
       ear.closing = false;
+      ear.speaking = false;
       ear.hot = 0;
       ear.cool = 0;
-      ear.chunks = [];
-      setPhase("listening");
-      const samples = new Uint8Array(ear.analyser.fftSize);
-      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
-      ear.timer = window.setInterval(() => {
-        if (!live.current || mutedRef.current || gateRef.current !== "listening") return;
-        ear.analyser.getByteTimeDomainData(samples);
-        let sum = 0;
-        for (const sample of samples) {
-          const value = (sample - 128) / 128;
-          sum += value * value;
+      if (gateRef.current !== "speaking") setPhase("listening");
+      if (ear.processor) return;
+      const processor = ear.ctx.createScriptProcessor(2048, 1, 1);
+      const mute = ear.ctx.createGain();
+      mute.gain.value = 0;
+      ear.source.connect(processor);
+      processor.connect(mute);
+      mute.connect(ear.ctx.destination);
+      ear.processor = processor;
+      ear.mute = mute;
+      processor.onaudioprocess = (event) => {
+        const earNow = earRef.current;
+        if (!earNow || earNow.closing) return;
+        const input = event.inputBuffer.getChannelData(0);
+        const ring = earNow.ring;
+        for (let index = 0; index < input.length; index += 1) {
+          ring[earNow.write] = input[index];
+          earNow.write = (earNow.write + 1) % ring.length;
         }
-        const level = Math.sqrt(sum / samples.length);
-        const trip = Math.max(0.008, ear.floor * 1.7);
-        const hot = level > trip;
-        if (!ear.speaking && !hot) ear.floor = ear.floor * 0.92 + level * 0.08;
-        if (!ear.speaking) {
-          ear.hot = hot ? ear.hot + 1 : 0;
-          if (ear.hot < 3) return;
-          ear.speaking = true;
-          ear.cool = 0;
-          ear.spoken = 0;
-          ear.chunks = [];
-          const rec = mime ? new MediaRecorder(ear.stream, { mimeType: mime }) : new MediaRecorder(ear.stream);
-          ear.recorder = rec;
-          rec.ondataavailable = (event) => { if (event.data.size) ear.chunks.push(event.data); };
-          rec.start(250);
+        earNow.filled = Math.min(ring.length, earNow.filled + input.length);
+        if (!live.current || mutedRef.current) return;
+        const gateNow = gateRef.current;
+        if (gateNow !== "listening" && gateNow !== "speaking") return;
+        let sum = 0;
+        for (let index = 0; index < input.length; index += 1) sum += input[index] * input[index];
+        const rms = Math.sqrt(sum / input.length);
+        const playing = earNow.playback;
+        const trip = playing ? Math.max(0.03, earNow.floor * 3.6) : Math.max(0.009, earNow.floor * 2.1);
+        const hot = rms > trip;
+        const frame = input.length / earNow.ctx.sampleRate;
+        if (!earNow.speaking && !hot && !playing) earNow.floor = earNow.floor * 0.94 + rms * 0.06;
+        if (!earNow.speaking) {
+          earNow.hot = hot ? earNow.hot + frame : 0;
+          if (earNow.hot < (playing ? 0.2 : 0.09)) return;
+          earNow.speaking = true;
+          earNow.cool = 0;
+          const back = Math.min(earNow.filled, Math.floor(earNow.ctx.sampleRate * 0.25));
+          earNow.startAt = (earNow.write - back + ring.length) % ring.length;
+          earNow.spoken = back / earNow.ctx.sampleRate;
+          if (playing || gateRef.current === "speaking") {
+            speakGen.current += 1;
+            earNow.playback = false;
+            stopSpeaker();
+            setPhase("listening");
+          }
+          setHeard("Listening");
           return;
         }
-        ear.cool = hot ? 0 : ear.cool + 1;
-        ear.spoken += 1;
-        if (ear.closing) return;
-        if (ear.cool >= 6 || ear.spoken > 160) {
-          ear.closing = true;
-          void finishUtterance(ear);
+        earNow.spoken += frame;
+        earNow.cool = hot ? 0 : earNow.cool + frame;
+        if (earNow.cool >= 0.32 || earNow.spoken > 15) {
+          earNow.closing = true;
+          void finishUtterance(earNow);
         }
-      }, 50);
+      };
     } catch {
       listenFallback();
     }
   }
 
   async function finishUtterance(ear: Ear) {
-    if (ear.timer) {
-      window.clearInterval(ear.timer);
-      ear.timer = 0;
-    }
-    const rec = ear.recorder;
+    const samples = takeRing(ear);
     ear.speaking = false;
-    const blob = await new Promise<Blob>((resolve) => {
-      if (!rec || rec.state === "inactive") {
-        resolve(new Blob(ear.chunks, { type: rec?.mimeType || "audio/webm" }));
-        return;
-      }
-      rec.onstop = () => resolve(new Blob(ear.chunks, { type: rec.mimeType || "audio/webm" }));
-      rec.stop();
-    });
-    ear.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
-    setPhase("idle");
-    if (!live.current) return;
-    if (blob.size < 900) {
-      listen();
+    ear.hot = 0;
+    ear.cool = 0;
+    const seconds = samples.length / ear.ctx.sampleRate;
+    if (!live.current || seconds < 0.28) {
+      ear.closing = false;
       return;
     }
-    const audio = await blobToBase64(blob);
-    const heard = await hearSarah({ data: { audio, mime: blob.type || "audio/webm" } }).catch(() => ({ text: "" }));
-    const text = heard.text.trim();
+    setHeard("");
+    let text = "";
+    try {
+      const wav = encodeWav(downsample(samples, ear.ctx.sampleRate, 16000), 16000);
+      const audio = await blobToBase64(wav);
+      const heard = await hearSarah({ data: { audio, mime: "audio/wav" } });
+      text = heard.text.trim();
+    } catch {
+      text = "";
+    }
+    ear.closing = false;
     if (!live.current || mutedRef.current) return;
-    if (!text || isEcho(text, spokenRef.current)) {
-      listen();
+    if (!text || isEcho(text, spokenRef.current)) return;
+    setHeard(text);
+    if (busyRef.current) {
+      pendingRef.current = text;
       return;
     }
     void turn(text, "call");
@@ -459,7 +542,6 @@ export function SarahWidget() {
     if (!said || !token || busyRef.current) return;
     if (channel === "call" && isEcho(said, spokenRef.current)) return;
     const mine = ++speakGen.current;
-    stopMic();
     busyRef.current = true;
     setBusy(true);
     const history = linesRef.current.slice(-6).map((line) => ({ role: line.from === "sarah" ? "assistant" as const : "user" as const, content: line.text }));
@@ -488,7 +570,10 @@ export function SarahWidget() {
     } finally {
       busyRef.current = false;
       setBusy(false);
-      if (channel === "call" && live.current && !mutedRef.current && gateRef.current === "idle") listen();
+      const next = pendingRef.current.trim();
+      pendingRef.current = "";
+      if (next && live.current && !mutedRef.current) void turn(next, "call");
+      else if (channel === "call" && live.current && !mutedRef.current && gateRef.current === "idle") listen();
     }
   }
 
@@ -500,6 +585,7 @@ export function SarahWidget() {
     setSeconds(0);
     setMode("call");
     setPhase("ringing");
+    startOffice();
     setLines([]);
     linesRef.current = [];
     actionRef.current = "";
@@ -508,6 +594,8 @@ export function SarahWidget() {
     setReceipt(null);
     await ringTwice();
     if (!live.current) return;
+    setPhase("listening");
+    listen();
     const greeting = [{ from: "sarah" as const, text: GREETING }];
     setLines(greeting);
     linesRef.current = greeting;
@@ -518,6 +606,7 @@ export function SarahWidget() {
   function endCall() {
     live.current = false;
     stopRing();
+    stopOffice();
     stopMic();
     stopEar();
     stopSpeaker();
@@ -560,7 +649,14 @@ export function SarahWidget() {
     mutedRef.current = next;
     setMuted(next);
     if (next) stopMic();
-    else if (live.current && gateRef.current === "idle" && !busyRef.current) listen();
+    else if (live.current) {
+      const ear = earRef.current;
+      if (ear) {
+        ear.closing = false;
+        ear.stream.getAudioTracks().forEach((track) => { track.enabled = true; });
+      }
+      void listenWithVad();
+    }
   }
 
   useEffect(() => {
@@ -607,7 +703,7 @@ export function SarahWidget() {
 
   return (
     <div
-      className={full ? "fixed inset-0 z-40 flex md:inset-auto md:right-4 md:bottom-4 md:w-[24rem]" : open ? "fixed inset-x-0 bottom-0 z-40 flex justify-end md:inset-x-auto md:right-4 md:bottom-4 md:w-[24rem]" : "fixed z-40 hidden md:right-4 md:bottom-4 md:flex"}
+      className={full ? "fixed inset-0 z-50 flex md:inset-auto md:right-4 md:bottom-4 md:w-[24rem]" : open ? "fixed inset-x-0 bottom-0 z-50 flex justify-end md:inset-x-auto md:right-4 md:bottom-4 md:w-[24rem]" : "fixed z-50 hidden md:right-4 md:bottom-4 md:flex"}
       style={full && !wide ? undefined : { ...place, paddingBottom: place ? undefined : "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
       <div className={open && mode !== "menu" && !tour ? "flex h-full w-full flex-col" : "flex w-full flex-col items-stretch gap-2 px-3 md:w-[24rem] md:items-end md:px-0"}>
@@ -802,7 +898,7 @@ export function SarahWidget() {
 
 export function SarahHeaderButton() {
   return (
-    <button type="button" className="grid size-11 place-items-center rounded-xl md:hidden" aria-label="Talk to Sarah" onClick={() => window.dispatchEvent(new Event("mts-sarah-toggle"))}>
+    <button type="button" className="grid size-10 place-items-center rounded-xl md:hidden" aria-label="Talk to Sarah" onClick={() => window.dispatchEvent(new Event("mts-sarah-toggle"))}>
       <AgentMark className="size-6" />
     </button>
   );
@@ -811,29 +907,118 @@ export function SarahHeaderButton() {
 type Ear = {
   stream: MediaStream;
   ctx: AudioContext;
-  analyser: AnalyserNode;
-  recorder: MediaRecorder | null;
-  chunks: Blob[];
-  timer: number;
+  source: MediaStreamAudioSourceNode;
+  processor: ScriptProcessorNode | null;
+  mute: GainNode | null;
+  ring: Float32Array;
+  write: number;
+  filled: number;
+  startAt: number;
   speaking: boolean;
   hot: number;
   cool: number;
   floor: number;
   spoken: number;
   closing: boolean;
+  playback: boolean;
 };
 
 async function openEar() {
-  const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-  });
+  const audio = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: 1,
+    sampleRate: 16000,
+    voiceIsolation: true,
+    googEchoCancellation: true,
+    googNoiseSuppression: true,
+    googAutoGainControl: true,
+    googHighpassFilter: true,
+    googEchoCancellation2: true,
+  };
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: audio as MediaTrackConstraints });
+  const track = stream.getAudioTracks()[0];
+  if (track) {
+    await track.applyConstraints({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      channelCount: 1,
+    }).catch(() => undefined);
+  }
   const ctx = new AudioContext();
   if (ctx.state === "suspended") await ctx.resume();
   const source = ctx.createMediaStreamSource(stream);
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 1024;
-  source.connect(analyser);
-  return { stream, ctx, analyser, recorder: null, chunks: [], timer: 0, speaking: false, hot: 0, cool: 0, floor: 0.008, spoken: 0, closing: false };
+  const rate = ctx.sampleRate;
+  return {
+    stream,
+    ctx,
+    source,
+    processor: null,
+    mute: null,
+    ring: new Float32Array(rate * 12),
+    write: 0,
+    filled: 0,
+    startAt: 0,
+    speaking: false,
+    hot: 0,
+    cool: 0,
+    floor: 0.008,
+    spoken: 0,
+    closing: false,
+    playback: false,
+  };
+}
+
+function takeRing(ear: Ear) {
+  const count = Math.min(ear.filled, ear.write >= ear.startAt ? ear.write - ear.startAt : ear.ring.length - ear.startAt + ear.write);
+  const out = new Float32Array(count);
+  for (let index = 0; index < count; index += 1) out[index] = ear.ring[(ear.startAt + index) % ear.ring.length];
+  return out;
+}
+
+function downsample(input: Float32Array, from: number, to: number) {
+  if (from === to) return input;
+  const ratio = from / to;
+  const length = Math.max(1, Math.floor(input.length / ratio));
+  const out = new Float32Array(length);
+  for (let index = 0; index < length; index += 1) {
+    const pos = index * ratio;
+    const left = Math.floor(pos);
+    const right = Math.min(left + 1, input.length - 1);
+    const mix = pos - left;
+    out[index] = input[left] * (1 - mix) + input[right] * mix;
+  }
+  return out;
+}
+
+function encodeWav(samples: Float32Array, sampleRate: number) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
+  const write = (offset: number, text: string) => {
+    for (let index = 0; index < text.length; index += 1) view.setUint8(offset + index, text.charCodeAt(index));
+  };
+  write(0, "RIFF");
+  view.setUint32(4, 36 + samples.length * 2, true);
+  write(8, "WAVE");
+  write(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  write(36, "data");
+  view.setUint32(40, samples.length * 2, true);
+  let offset = 44;
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = Math.max(-1, Math.min(1, samples[index]));
+    view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    offset += 2;
+  }
+  return new Blob([buffer], { type: "audio/wav" });
 }
 
 function blobToBase64(blob: Blob) {

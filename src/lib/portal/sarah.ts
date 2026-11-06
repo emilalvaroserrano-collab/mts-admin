@@ -741,9 +741,13 @@ export const hearSarah = createServerFn({ method: "POST" })
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) return { text: "" };
     const bytes = Buffer.from(data.audio, "base64");
+    const ext = data.mime.includes("mp4") ? "m4a" : data.mime.includes("ogg") ? "ogg" : data.mime.includes("wav") ? "wav" : "webm";
     const form = new FormData();
     form.append("model", "grok-voice-transcribe-2.0");
-    form.append("file", new File([new Uint8Array(bytes)], "turn.webm", { type: data.mime }));
+    form.append("language", "en");
+    form.append("format", "true");
+    for (const term of ["Manage Tech Service", "Telxent", "VoIP", "eFax", "Zendesk"]) form.append("keyterm", term);
+    form.append("file", new File([new Uint8Array(bytes)], `turn.${ext}`, { type: data.mime }));
     const res = await fetch("https://api.x.ai/v1/stt", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },

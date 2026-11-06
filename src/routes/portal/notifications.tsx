@@ -21,7 +21,7 @@ function NoticesPage() {
   });
   const unread = (notices.data ?? []).filter((item) => !item.read).length;
   return (
-    <div className="mx-auto grid w-full max-w-3xl gap-3">
+    <div className="grid w-full gap-3">
       <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
       <p className="text-sm text-muted">{unread ? `${unread} unread` : "You're caught up."}</p>
       {(notices.data ?? []).map((item) => (
