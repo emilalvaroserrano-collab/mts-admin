@@ -1,1 +1,0 @@
-import{t as e}from"./useNavigate-7Ol8DUlk.js";import{t}from"./jsx-runtime-BtH0gOTJ.js";var n=t(),r=()=>(0,n.jsx)(e,{to:`/`});export{r as component};

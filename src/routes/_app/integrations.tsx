@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getIntegration, runDeskJobs, saveIntegration, syncPortalUsers, syncZendesk, testIntegration } from "@/lib/portal/api";
+import { getIntegration, getSarahMetrics, runDeskJobs, saveIntegration, syncPortalUsers, syncZendesk, testIntegration } from "@/lib/portal/api";
 import { ago } from "@/lib/portal/format";
 import { Badge, Button, ErrorNote, Field, Input, Loading, PageHeader, Panel, Toggle, errorText } from "@/components/ui";
 
@@ -13,6 +13,7 @@ export const Route = createFileRoute("/_app/integrations")({
 function IntegrationPage() {
   const client = useQueryClient();
   const query = useQuery({ queryKey: ["integration"], queryFn: () => getIntegration() });
+  const sarah = useQuery({ queryKey: ["sarah-metrics"], queryFn: () => getSarahMetrics() });
   const [subdomain, setSubdomain] = useState("");
   const [email, setEmail] = useState("");
   const [apiToken, setApiToken] = useState("");
@@ -91,6 +92,22 @@ function IntegrationPage() {
         title="Zendesk"
         description="shop.zendesk.com is connected with the Conversations API. Ticket import uses OAuth client credentials when that client id and secret are set."
       />
+      <Panel>
+        <div className="grid gap-2">
+          <p className="text-sm font-semibold">Sarah actions</p>
+          <p className="text-sm text-muted">Open confirmations, checks, and desk reviews. Counts come from the action log, not from what Sarah says.</p>
+          <div className="flex flex-wrap gap-2">
+            {(sarah.data?.counts.length ? sarah.data.counts : [{ status: "none yet", n: 0 }]).map((item) => (
+              <Badge key={item.status} tone={item.status === "manual_review" || item.status === "failed" ? "bad" : item.status === "succeeded" ? "good" : "neutral"}>{item.status} · {item.n}</Badge>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(sarah.data?.confirmations.length ? sarah.data.confirmations : [{ status: "no quotes", n: 0 }]).map((item) => (
+              <Badge key={`quote-${item.status}`} tone={item.status === "accepted" ? "good" : item.status === "expired" ? "bad" : "neutral"}>quote {item.status} · {item.n}</Badge>
+            ))}
+          </div>
+        </div>
+      </Panel>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <Panel>
           <form

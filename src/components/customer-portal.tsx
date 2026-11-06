@@ -5,10 +5,11 @@ import { useState, type ReactNode } from "react";
 import { signOut } from "@/lib/auth/client";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { getSessionHome } from "@/lib/portal/api";
+import { getSarahStatus } from "@/lib/portal/sarah";
 import { usePortalSession } from "@/lib/portal/use-portal-session";
-import { setShopToken } from "@/lib/portal/shop-session";
+import { setShopToken, useShopToken } from "@/lib/portal/shop-session";
 import { useCart } from "@/lib/portal/store-cart";
-import { SarahWidget } from "@/components/sarah-widget";
+import { SarahHeaderButton, SarahWidget } from "@/components/sarah-widget";
 
 const NAV = [
   { to: "/portal", label: "Home", icon: House, exact: true, guide: "home" },
@@ -27,6 +28,13 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const user = useCurrentUser();
   const home = useQuery({ queryKey: ["session-home"], queryFn: () => getSessionHome() });
   const cart = useCart();
+  const token = useShopToken();
+  const sarah = useQuery({
+    queryKey: ["sarah-banner", token],
+    queryFn: () => getSarahStatus({ data: { token } }),
+    enabled: Boolean(token),
+    refetchInterval: 15000,
+  });
   const [menu, setMenu] = useState(false);
   const current = NAV.find((item) => ("exact" in item && item.exact ? path === item.to : path === item.to || path.startsWith(`${item.to}/`)));
   const name = user?.displayName || session.data?.customer.name || "there";
@@ -56,6 +64,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
               {count > 0 ? <span className="absolute top-1 right-1 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-white">{count}</span> : null}
             </Link>
             <Link to="/portal/notifications" className="grid size-11 place-items-center rounded-xl" aria-label="Notifications"><Bell className="size-5" /></Link>
+            <SarahHeaderButton />
             {home.data?.destination === "admin" ? <a href="/" className="hidden px-2 text-xs font-semibold text-accent sm:inline">Admin</a> : null}
             <button type="button" className="grid size-11 place-items-center rounded-xl md:hidden" aria-label="Open menu" onClick={() => setMenu(true)}>
               <Menu className="size-5" />
@@ -67,6 +76,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
         </div>
         <p className="mx-auto hidden w-full max-w-6xl truncate px-4 pb-2 text-xs text-muted md:block">{session.data?.organization || session.data?.business || user?.primaryEmail || name}</p>
       </header>
+      {sarah.data?.banner ? <p className="border-b border-[#ead7a1] bg-[#fff7e8] px-4 py-2 text-center text-sm text-[#6d5105]">{sarah.data.banner}</p> : null}
       <main className="min-w-0 px-4 py-5 md:px-6">{children}</main>
       {menu ? (
         <div className="fixed inset-0 z-40 md:hidden">

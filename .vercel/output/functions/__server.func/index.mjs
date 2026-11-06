@@ -12,8 +12,10 @@ var install_page_default = "<!DOCTYPE html>\n<html lang=\"en\" class=\"device-de
 //#endregion
 //#region \0virtual:grok-og-identity
 var grokOgIdentity = { "site": {
-	"title": "ManageTech Admin",
-	"color": "1C3D3A"
+	"title": "MTS Shop",
+	"card": "custom",
+	"color": "5CDEF0",
+	"image": "/og.jpg"
 } };
 //#endregion
 //#region scripts/grok-pwa-shared.mjs

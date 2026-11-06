@@ -2409,6 +2409,12 @@ async function sweepDesk(sql: Sql) {
 
 export async function runPortalJobs(sql: Sql) {
   await sweepDesk(sql);
+  try {
+    const { sweepSarahActions } = await import("./sarah");
+    await sweepSarahActions(sql);
+  } catch {
+    /* Sarah's action table is created by migration. A missing table should not stop the other jobs. */
+  }
   const jobs = await dueJobs(sql, 12);
   for (const job of jobs) {
     let payload: { orderId?: number; ticketId?: number; emailId?: number } = {};
@@ -2995,6 +3001,25 @@ export const savePolicy = createServerFn({ method: "POST" })
     `;
     await audit(sql, actor, "Updated role", data.id, "Permission template saved.");
     return { ok: true };
+  });
+
+export const getSarahMetrics = createServerFn({ method: "GET" })
+  .middleware([authMiddleware])
+  .handler(async ({ context }) => {
+    const sql = await getSql();
+    await loadActor(sql, context.userId);
+    try {
+      const rows = await sql<Row>`select status, count(*)::int as n from agent_actions group by status`;
+      const confirmations = await sql<Row>`select status, count(*)::int as n from pending_action_confirmations group by status`;
+      const open = rows.reduce((sum, row) => sum + (["executing", "checking_status", "manual_review", "awaiting_confirmation"].includes(s(row, "status")) ? n(row, "n") : 0), 0);
+      return {
+        counts: rows.map((row) => ({ status: s(row, "status"), n: n(row, "n") })),
+        confirmations: confirmations.map((row) => ({ status: s(row, "status"), n: n(row, "n") })),
+        open,
+      };
+    } catch {
+      return { counts: [] as { status: string; n: number }[], confirmations: [] as { status: string; n: number }[], open: 0 };
+    }
   });
 
 export const getIntegration = createServerFn({ method: "GET" })

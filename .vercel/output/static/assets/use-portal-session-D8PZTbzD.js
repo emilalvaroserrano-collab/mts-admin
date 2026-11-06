@@ -1,0 +1,1 @@
+import{u as e}from"./api-BAMN3508.js";import{t}from"./useQuery-CBITIOi3.js";import{n}from"./shop-session-q1MEmKh0.js";function r(){let r=n();return t({queryKey:[`portal-session`,r],queryFn:()=>e({data:r}),enabled:!!r})}export{r as t};

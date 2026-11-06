@@ -1,0 +1,1270 @@
+### Sarah CSR — Agentic UX & Human Conversation Upgrade
+
+Core priorities
+
+P1
+
+### 5
+
+Experience upgrades
+
+P2
+
+### 2
+
+Quality & rollout
+
+### Master developer implementation checklist
+
+# MTS ADMIN — SARAH CSR AGENT IMPLEMENTATION BLUEPRINT
+
+**Document Version:** 1.0
+**Repository:** https://github.com/emilalvaroserrano-collab/mts-admin
+**Target Branch:** `main` (development through feature branches and pull requests)
+**Priority:** Production-grade agent reliability, user experience, natural conversation
+**Scope:** Existing Customer Portal, Sarah Chat, Sarah Voice, Server Functions, Database, Integrations
+**Objective:** Implement the agreed Sarah/Miles architecture while preserving existing working features.
+
+---
+
+# 0. PROJECT DIRECTIVE
+
+The developer must upgrade Sarah from a basic chat-and-voice assistant into a context-aware, tool-enabled Customer Service Representative (CSR) capable of interacting with the existing Manage Tech Service application.
+
+**DO NOT build another customer portal. DO NOT replace the existing application framework. DO NOT redesign unrelated modules.**
+
+Improve the existing architecture.
+
+Sarah must:
+
+1. Understand customer intent through natural language.
+2. Respond with authentic, native American conversational expressions.
+3. Call the correct function tools when actions are required.
+4. Display actual backend results within the existing interface.
+5. Navigate only when the customer explicitly requests or accepts navigation.
+6. Obtain confirmation before financial commitments or material service changes.
+7. Continue providing feedback while server operations are running.
+8. Preserve user control and avoid blocking the entire application.
+9. Reconcile uncertain operations rather than assuming success or failure.
+10. Respect customer permissions and backend-authorized fields.
+11. Maintain conversational context between related requests.
+12. Never claim that an action succeeded without backend verification.
+
+**Core principle:** The application must reflect the actual backend state. Sarah's conversational response must never exceed what the system can prove.
+
+---
+
+# 1. EXISTING CODEBASE AND REFACTOR TARGETS
+
+Review these files before making changes.
+
+| Existing File | Current Responsibility | Required Change |
+|---|---|---|
+| `src/lib/portal/sarah.ts` | AI orchestration, function tools, STT/TTS | Refactor tool execution, speech generation, action lifecycle |
+| `src/lib/portal/sarah-plan.ts` | Intent detection, confirmations | Replace fragile heuristics with validated intent and confirmation handling |
+| `src/lib/portal/knowledge.ts` | MTS knowledge base | Extend conversation guidance and authorized service policies |
+| `src/components/sarah-widget.tsx` | Sarah chat/call interface | Add inline results, status banners, confirmation cards, navigation control |
+| `src/components/customer-portal.tsx` | Customer Portal shell | Integrate persistent Sarah action UI and navigation |
+| `src/lib/portal/api.ts` | Portal server functions | Centralize action execution and permission checks |
+| `src/lib/portal/commerce.ts` | Orders, payments, queue | Integrate durable, idempotent operation processing |
+| `src/routes/portal/shop.tsx` | Equipment and service ordering | Use shared confirmation and operation lifecycle |
+| `src/lib/portal/shop-session.ts` | Customer session token | Preserve validated session identity across agent actions |
+| `migrations/` | PostgreSQL schemas | Add durable agent actions, confirmations, and action-event records |
+
+Current issues requiring correction:
+
+- `withCue()` adds repetitive customer names and acknowledgments.
+- `planUtterance()` intercepts many requests before the LLM can interpret full conversational context.
+- Sarah's `show` response automatically triggers `navigate()`, including responses where navigation wasn't expressly requested.
+- The `pending` action object is passed from the browser and should not be trusted as proof of approval.
+- `confirmMonthly` currently handles confirmation too broadly.
+- Mentioning `$18` can be interpreted as approval in the current heuristic logic.
+- Write operations lack a unified durable, idempotent action ledger.
+- Backend read and mutation operations do not share a consistent UI event contract.
+- The existing speech preparation inserts a literal `[pause]` marker that should be replaced with TTS-compatible timing.
+- Backend permission checks must be normalized across Sarah and the ordinary portal.
+
+All changes must maintain compatibility with the existing authentication, Zendesk, Telxent request workflow, service catalog, inventory, and customer accounts.
+
+---
+
+# PHASE 1 — TOOL EXECUTION STATE MACHINE
+
+**Priority: P0 — Must complete before paid-service automation.**
+
+## Task 1.1 — Establish canonical tool states
+
+- [ ] Implement a typed `SarahActionStatus` union.
+- [ ] Define the following states:
+
+| State | Meaning |
+|---|---|
+| `requested` | User intent identified; action created |
+| `validating` | Identity, permissions, input, and eligibility being checked |
+| `awaiting_confirmation` | Action requires explicit customer consent |
+| `executing` | Authorized backend operation is running |
+| `checking_status` | Outcome is uncertain; reconciliation required |
+| `succeeded` | The intended operation is confirmed by the authoritative system |
+| `failed` | Failure has been confirmed; outcome is known |
+| `cancelled` | Action was cancelled before execution or cancellation is confirmed |
+| `manual_review` | Outcome cannot yet be determined automatically |
+
+- [ ] Keep action status separate from the lifecycle of the underlying resource.
+- [ ] A successfully created service request must not be described as an activated service.
+- [ ] A successfully created order must not be described as paid.
+- [ ] An accepted ticket must not automatically be described as assigned to a technician.
+- [ ] Prevent invalid state transitions through a backend state-machine validator.
+- [ ] Make each transition auditable.
+
+## Task 1.2 — Build the action state machine
+
+Required state flow:
+
+`requested → validating → executing → succeeded`
+
+For operations requiring approval:
+
+`requested → validating → awaiting_confirmation → executing → succeeded`
+
+For uncertain network outcomes:
+
+`executing → checking_status → succeeded / failed / manual_review`
+
+For declined confirmations:
+
+`awaiting_confirmation → cancelled`
+
+A failed operation is only marked `failed` when the backend can establish that it did not complete, or when a definitive failure has been returned.
+
+A network timeout alone is not proof of failure.
+
+## Task 1.3 — State-specific conversational output
+
+- [ ] Give Sarah access to the current action state.
+- [ ] Generate short customer-friendly messages.
+- [ ] Avoid technical state names in spoken responses.
+- [ ] Keep status messages consistent with the backend.
+
+Examples:
+
+| Backend State | Natural Sarah Expression |
+|---|---|
+| Requested | "Sure, let me check that." |
+| Validating | "Okay, let me pull up your account." |
+| Awaiting confirmation | "That'll add eighteen dollars a month. Want me to go ahead?" |
+| Executing | "Got it. I'm sending that through." |
+| Checking status | "I'm still checking whether that went through." |
+| Succeeded | "Done. Your request is in. Here's the reference." |
+| Failed | "That didn't go through. I can help you try again." |
+| Manual review | "I can't confirm the result yet, so I'm flagging it for the team to check." |
+
+No fabricated progress percentages, fake completion indicators, or arbitrary success messages.
+
+**Acceptance criteria**
+
+- Every agent tool operation has a verifiable state.
+- State transitions are validated on the server.
+- UI and voice reflect the same state.
+- Reconnecting the browser does not reset an in-progress operation.
+- Timeout never automatically becomes failure.
+
+---
+
+# PHASE 2 — DURABLE BACKEND ACTIONS AND EVENT CONTRACT
+
+**Priority: P0**
+
+## Task 2.1 — Create persistent action storage
+
+Add database migrations for a durable `agent_actions` table.
+
+Recommended fields:
+
+- `id` — UUID primary key
+- `conversation_id`
+- `customer_id`
+- `organization_id`
+- `tool_name`
+- `intent_type`
+- `status`
+- `idempotency_key`
+- `input_hash`
+- `parameters_json`
+- `confirmation_id`
+- `resource_type`
+- `resource_id`
+- `provider_reference`
+- `result_json`
+- `error_code`
+- `version`
+- `created_at`
+- `updated_at`
+- `completed_at`
+
+Add appropriate organization/customer foreign keys and indexes.
+
+Do not store plaintext passwords, authentication tokens, payment card details, or unnecessary sensitive data in event logs.
+
+## Task 2.2 — Create action event history
+
+Add `agent_action_events` or an equivalent event log.
+
+Persist:
+
+- Action identifier
+- Event type
+- Previous state
+- New state
+- Event version
+- Timestamp
+- Authorized actor
+- Backend reference
+- Sanitized error details
+
+Events must support debugging and reconciliation.
+
+## Task 2.3 — Implement a consistent server-to-client event contract
+
+Every agent action should return or publish structured data containing:
+
+- `actionId`
+- `conversationId`
+- `tool`
+- `status`
+- `version`
+- `intent`
+- `message`
+- `uiPresentation`
+- `resource`
+- `availableActions`
+- `updatedAt`
+
+Supported presentation types:
+
+- `inline_result`
+- `confirmation_sheet`
+- `pending_banner`
+- `receipt`
+- `error_panel`
+- `navigation_suggestion`
+
+Separate the factual result payload from Sarah's natural-language response.
+
+The LLM must not become the authoritative source of operational state.
+
+## Task 2.4 — Implement shared server APIs
+
+Suggested operations:
+
+- [ ] `createSarahAction`
+- [ ] `confirmSarahAction`
+- [ ] `getSarahActionStatus`
+- [ ] `cancelSarahAction`
+- [ ] `getSarahConversationActions`
+
+Use the existing TanStack Start server-function pattern.
+
+Every function must validate the authenticated customer and applicable organization permissions.
+
+The client must pass an action ID, not a trusted executable action definition.
+
+**Acceptance criteria**
+
+- All mutations receive a stable action ID.
+- Actions survive refresh, navigation, and temporary disconnection.
+- Browser clients can query the exact final result.
+- A malicious client cannot alter the action's authorized parameters after confirmation.
+
+---
+
+# PHASE 3 — IDPOTENCY AND TIMEOUT RECOVERY
+
+**Priority: P0**
+
+## Task 3.1 — Implement idempotency
+
+- [ ] Generate a unique idempotency key for each distinct customer-approved mutation.
+- [ ] Associate the key with the authenticated customer and operation.
+- [ ] Enforce uniqueness in the database.
+- [ ] Return the original result for repeated submissions using the same key.
+- [ ] Reject conflicting parameter changes under an existing key.
+- [ ] Persist the action record before executing external side effects.
+- [ ] Use transactional persistence where supported.
+- [ ] Use an outbox/worker model where database writes and external API calls must be coordinated.
+
+Do not assume local database transactions can roll back completed external API operations.
+
+## Task 3.2 — Implement timeout reconciliation
+
+When a request times out:
+
+- [ ] Set `checking_status`.
+- [ ] Retain the original action ID and idempotency key.
+- [ ] Query local persistent records.
+- [ ] If an external provider supports lookup by operation reference, query that provider.
+- [ ] Reconcile authoritative results.
+- [ ] If a matching completed action exists, show its original receipt.
+- [ ] If definitely rejected, report the verified failure.
+- [ ] If still unknown, keep checking with bounded retries and eventually escalate to manual review.
+- [ ] Never automatically create a second order while the original outcome remains unknown.
+
+## Task 3.3 — Prevent duplicate side effects
+
+Apply duplicate prevention to:
+
+- Service orders
+- Equipment orders
+- VoIP extensions
+- Wiring requests
+- Ticket creation
+- Published ticket replies
+- Payment processing
+- Cart additions initiated by Sarah
+
+A new customer request may create a new action. Replaying an existing submission must not.
+
+## Task 3.4 — Handle partial success
+
+Example: service request saved successfully, but Zendesk ticket creation times out.
+
+- [ ] Preserve the successfully created service request.
+- [ ] Store the incomplete downstream step.
+- [ ] Retry only the missing downstream work using a deduplication key.
+- [ ] Do not create a second service request.
+- [ ] Show the distinction between local acceptance and external synchronization.
+- [ ] Reconcile eventually or flag for human review.
+
+**Acceptance criteria**
+
+- Repeated clicks do not create duplicate orders.
+- Refreshing during execution preserves the operation.
+- Closing and reopening the portal returns the known state.
+- A lost HTTP response cannot accidentally trigger duplicate billing or provisioning.
+- External webhook replays do not duplicate effects.
+
+---
+
+# PHASE 4 — CONFIRMATION BEFORE MUTATION
+
+**Priority: P0**
+
+## Task 4.1 — Introduce server-owned confirmation records
+
+Build a `pending_action_confirmations` table or equivalent.
+
+Store:
+
+- Confirmation ID
+- Customer ID
+- Organization ID
+- Action ID
+- Tool name
+- Exact proposed change
+- Product/service
+- Quantity
+- Total amount
+- Currency
+- Billing frequency
+- Applicable terms
+- Pricing version
+- Expiry
+- Confirmation status
+
+Only the server may mark a confirmation as accepted.
+
+## Task 4.2 — Define confirmation policy
+
+Explicit confirmation is mandatory before:
+
+- Charging money
+- Purchasing equipment
+- Creating recurring paid services
+- Upgrading/downgrading service tiers with financial impact
+- Accepting a binding quote
+- Placing a paid wiring request
+- Changing payment arrangements
+- Canceling an active paid service
+- Any irreversible or materially consequential operation
+
+Lower-risk operations can use simpler acknowledgment or preview flows when appropriate.
+
+## Task 4.3 — VoIP confirmation
+
+Current documented charge: **$18 per month per additional extension**.
+
+- [ ] Verify the exact quantity and charge from the backend.
+- [ ] Display recurring cost and billing cadence.
+- [ ] Explain Telxent confirmation remains pending.
+- [ ] Ask whether a desk phone is needed.
+- [ ] Capture explicit customer approval against the specific quote.
+- [ ] Only then submit the service request.
+- [ ] Never describe the extension as active before external confirmation.
+
+A customer simply saying "eighteen dollars" is not approval.
+
+## Task 4.4 — Wiring confirmation
+
+Current documented price: **$175 per drop**.
+
+- [ ] Collect number of drops.
+- [ ] Calculate total server-side.
+- [ ] Display location, quantity, unit price, and total.
+- [ ] Ask for explicit approval.
+- [ ] Store the approved quote snapshot.
+- [ ] Submit the request.
+- [ ] Indicate that work/billing still require desk confirmation.
+
+## Task 4.5 — Confirmation UI
+
+Build a reusable confirmation component containing:
+
+- Service/product name
+- Description of the exact action
+- Quantity
+- Price
+- Recurring/one-time billing classification
+- Affected account/site
+- Confirmation statement
+- Confirm button
+- Cancel button
+
+The Confirm button must not directly fabricate a successful action.
+
+It must authorize the specific pending backend action.
+
+## Task 4.6 — Confirmation security
+
+- [ ] Bind confirmation to the exact customer and proposed parameters.
+- [ ] Expire old confirmations.
+- [ ] Invalidate confirmation if price, quantity, recipient, or service terms change.
+- [ ] Prevent replay of previously accepted confirmations.
+- [ ] Do not let the LLM set `confirmMonthly=true` from keywords alone.
+- [ ] Replace the overloaded `confirmMonthly` flag with explicit charge-approval state for each offering.
+- [ ] Log time and applicable terms of agreement.
+
+**Acceptance criteria**
+
+No paid or material service modification can execute without a valid confirmation bound to the exact action.
+
+---
+
+# PHASE 5 — PERMISSIONS AND TENANT ISOLATION
+
+**Priority: P0**
+
+## Task 5.1 — Enforce authorization on the backend
+
+- [ ] Resolve customer identity from the validated session.
+- [ ] Validate account activity and privileges.
+- [ ] Verify organization ownership/scope.
+- [ ] Enforce permission checks in the tool execution layer.
+- [ ] Never trust organization IDs, role names, or access flags supplied by the browser or LLM.
+- [ ] Return only explicitly authorized fields.
+
+## Task 5.2 — Audit current server functions
+
+Review:
+
+- `listPortalCustomers`
+- `listServiceDesk`
+- `setServiceStatus`
+- `orderPortalOffering`
+- Sarah's direct SQL queries
+- Ticket reads and replies
+- Account updates
+- Order and billing reads
+
+Ensure every relevant query is appropriately scoped.
+
+## Task 5.3 — Field-level authorization
+
+Create approved response DTOs (Data Transfer Objects).
+
+For example, ticket lookup may expose:
+
+- Ticket ID
+- Subject
+- Customer-visible status
+- Public replies
+- Permitted timestamps
+
+It must not expose unauthorized private notes, internal credentials, or another customer's records.
+
+The UI should render only fields included in the authorized DTO.
+
+The LLM must not infer missing protected fields.
+
+## Task 5.4 — Prevent privilege escalation
+
+- [ ] Sarah cannot grant admin privileges.
+- [ ] Sarah cannot approve account access without an authorized workflow.
+- [ ] Sarah cannot bypass purchase or service permissions.
+- [ ] Sarah cannot execute arbitrary SQL based on natural-language requests.
+- [ ] Tool calls must use allowlisted operations and validated parameters.
+- [ ] Enforce invitation/approval rules consistently with MTS's invite-only policy.
+
+**Acceptance criteria**
+
+A customer cannot access another organization's records, use restricted tools, or obtain hidden fields through manipulated requests, prompts, or URLs.
+
+---
+
+# PHASE 6 — PORTAL-DRIVEN AGENT UI
+
+**Priority: P1**
+
+**Design decision:** Use the existing MTS Customer Portal. Do not build a second agent workspace.
+
+## Task 6.1 — Inline results for read operations
+
+For informational requests, Sarah must display retrieved results inside her chat interface.
+
+Examples:
+
+- List tickets → ticket preview cards
+- List orders → order summary cards
+- List requests → service status cards
+- View account → authorized account summary
+- Find equipment → product cards
+- Knowledge base search → concise answer with relevant page option
+
+Do not automatically navigate away when Sarah is reading data.
+
+## Task 6.2 — Explicit navigation
+
+Navigate when:
+
+- The customer specifically requests a page.
+- The customer clicks an Open/View action.
+- The customer expressly agrees to Sarah taking them there.
+
+Examples:
+
+"Open my tickets." → Navigate to Tickets.
+
+"Do I have any open tickets?" → Show inline results only.
+
+"Show me that order." → Open the requested order.
+
+## Task 6.3 — Unsaved work protection
+
+- [ ] Detect unsaved forms or pending edits.
+- [ ] Warn before navigation would discard data.
+- [ ] Preserve drafts where feasible.
+- [ ] Provide Stay / Leave options.
+- [ ] Do not let an agent-triggered navigation silently discard customer input.
+
+## Task 6.4 — Inline UI components
+
+Suggested components:
+
+- `SarahInlineResult`
+- `SarahTicketCard`
+- `SarahOrderCard`
+- `SarahServiceCard`
+- `SarahProductCard`
+- `SarahConfirmationSheet`
+- `SarahOperationBanner`
+- `SarahActionReceipt`
+- `SarahNavigationPrompt`
+
+Use existing Tailwind styling and shared component conventions.
+
+## Task 6.5 — Non-blocking pending banner
+
+While an action executes:
+
+- [ ] Display a visible pending indicator.
+- [ ] Allow the customer to continue using the portal.
+- [ ] Disable only controls that could duplicate or conflict with the active operation.
+- [ ] Continue allowing navigation to unrelated areas.
+- [ ] Keep the action accessible after navigating to another page.
+- [ ] Restore the status after refresh.
+
+Example banner:
+
+"Submitting your VoIP extension request..."
+
+Do not show fake percentages.
+
+## Task 6.6 — Action receipts
+
+After confirmed success, display:
+
+- Action performed
+- Confirmed status
+- Reference ID
+- Applicable amount
+- Relevant provider/pending fulfillment status
+- Next available action
+
+Example:
+
+"Request submitted — #204. Telxent confirmation pending."
+
+Receipt information must come from backend records.
+
+**Acceptance criteria**
+
+Read requests never cause unexpected navigation, ongoing operations never block the entire application, and action receipts match persistent records.
+
+---
+
+# PHASE 7 — FUNCTION TOOL BEHAVIOR MATRIX
+
+**Priority: P1**
+
+Implement the following behavior for every existing Sarah function.
+
+| Tool | UI Behavior | Confirmation / Result |
+|---|---|---|
+| `account` | Inline profile summary | Read-only; authorized fields |
+| `list_tickets` | Ticket cards | Read-only, no navigation |
+| `list_orders` | Order cards | Read-only, no navigation |
+| `list_requests` | Service cards | Read-only, no navigation |
+| `open_ticket` | Pending state, then receipt | Confirm actual ticket creation |
+| `reply_ticket` | Reply preview and submission | Verify publication |
+| `order_service` | Confirmation sheet and pending banner | Charge approval when applicable |
+| `complaint` | Complaint review and submission | Verified complaint reference |
+| `update_contact` | Proposed phone-number update | Confirm new value before mutation |
+| `find_equipment` | Inline catalog cards | Add to cart only when selected |
+| `lookup_kb` | Inline explanation | No mutation |
+| `show_page` | Navigation suggestion or explicit route | Honor customer navigation intent |
+
+## Task 7.1 — Standardize execution
+
+- [ ] Separate intent planning from tool execution.
+- [ ] Implement a tool registry with metadata.
+- [ ] Mark tools as read, navigation, low-risk mutation, or confirmation-required mutation.
+- [ ] Apply common input validation.
+- [ ] Apply common authorization.
+- [ ] Apply appropriate confirmation policy.
+- [ ] Return structured results.
+- [ ] Pass the result to the conversational response generator.
+
+## Task 7.2 — Remove unsafe inference
+
+Update `sarah-plan.ts`.
+
+- [ ] Do not treat keyword matches as permission to execute mutations.
+- [ ] Do not automatically open tickets for every generic "help" question.
+- [ ] Do not treat price mentions as payment consent.
+- [ ] Use context-aware intent classification.
+- [ ] Ask for clarification when the requested action is ambiguous.
+- [ ] Preserve a deterministic fallback for simple, unambiguous requests.
+- [ ] Reject unsupported tool names and parameter types.
+
+## Task 7.3 — Prevent unintended cart mutation
+
+- [ ] Searching for equipment must not add items automatically.
+- [ ] Require explicit Add to Cart intent.
+- [ ] Deduplicate repeated add actions.
+- [ ] Show updated cart state only after the operation succeeds.
+
+---
+
+# PHASE 8 — SARAH'S HUMAN-LIKE CSR PERSONALITY
+
+**Priority: P1**
+
+## Task 8.1 — Replace repetitive response formatting
+
+Remove or refactor forced phrases from `withCue()`.
+
+Sarah must not always prepend:
+
+- Customer name
+- "I understand"
+- "I hear you"
+- "Thank you for confirming"
+
+Allow the conversation model to select appropriate phrasing.
+
+## Task 8.2 — Establish native American English style
+
+Sarah must speak like a competent, approachable US-based CSR.
+
+Characteristics:
+
+- Fluent American English
+- Natural contractions
+- Concise sentences
+- Relaxed professional delivery
+- Context-sensitive warmth
+- Varied phrasing
+- Comfortable use of IT terminology
+- No repetitive corporate scripts
+
+Prefer:
+
+"I'll check that."
+
+Over:
+
+"I will now proceed with verifying your request."
+
+Prefer:
+
+"Yeah, that's the one."
+
+Over:
+
+"That is indeed the correct option."
+
+Prefer:
+
+"Let me pull that up."
+
+Over:
+
+"Please allow me a moment to retrieve that information."
+
+## Task 8.3 — Human expression library
+
+Sarah may naturally use:
+
+**Acknowledgment**
+
+- "Mm-hmm."
+- "Uh-huh."
+- "Yup."
+- "Yep."
+- "Yeah."
+- "Okay."
+- "Alright."
+- "Got it."
+- "Gotcha."
+- "Sure."
+
+**Realization**
+
+- "Ahh, okay."
+- "Oh, I see."
+- "Ohh, gotcha."
+- "Ah, that explains it."
+- "Okay, now I see what you mean."
+
+**Thinking**
+
+- "Hmm..."
+- "Let me see..."
+- "Okay, so..."
+- "Well..."
+- "Let's see here..."
+
+**Agreement**
+
+- "Exactly."
+- "Right."
+- "For sure."
+- "That makes sense."
+- "Oh, definitely."
+
+**Light surprise**
+
+- "Oh, really?"
+- "Huh, interesting."
+- "Oh, wow."
+- "That's a little unusual."
+
+**Light amusement**
+
+- "Ha, yeah."
+- "Haha, fair enough."
+- A brief natural chuckle when appropriate.
+
+Do not mechanically insert expressions into every response.
+
+Avoid overusing "hmpf" or sigh-like sounds, which can unintentionally convey annoyance.
+
+## Task 8.4 — Expression-selection policy
+
+- [ ] Expressions must match the conversational context.
+- [ ] Avoid stacking multiple fillers.
+- [ ] Usually use zero or one conversational cue per response.
+- [ ] Do not repeatedly use the same opener.
+- [ ] Vary response rhythm naturally.
+- [ ] Allow direct answers without a filler.
+- [ ] Use light laughter only in genuinely appropriate situations.
+- [ ] Never laugh during outages, emergencies, or serious billing disputes.
+- [ ] Never invent personal experiences to sound human.
+- [ ] Answer truthfully if asked whether Sarah is automated.
+
+## Task 8.5 — Adaptive emotional behavior
+
+Sarah must respond differently depending on the customer's situation.
+
+| Customer State | Sarah's Expected Behavior |
+|---|---|
+| Friendly | Warm and relaxed |
+| Technical | Precise and efficient |
+| Confused | Patient and clear |
+| Frustrated | Calm, brief acknowledgment, action-oriented |
+| Urgent | Focused and direct |
+| Playful | Light humor where appropriate |
+| Quiet | Avoid unnecessary chatter |
+| Impatient | Short answers and immediate action |
+
+## Task 8.6 — Default response length
+
+- [ ] One to three sentences for ordinary voice responses.
+- [ ] Longer explanations only when necessary.
+- [ ] One diagnostic question at a time.
+- [ ] No excessive paraphrasing.
+- [ ] No repeated use of the customer's name.
+- [ ] No robotic sign-offs after every reply.
+
+## Task 8.7 — State-aware spoken responses
+
+Sarah's personality must adapt to tool state.
+
+Before checking:
+
+"Sure, let me look."
+
+During execution:
+
+"Okay, I'm sending that through."
+
+During reconciliation:
+
+"Hmm, I'm still checking whether that went through."
+
+On success:
+
+"Done. Your request is in."
+
+On confirmed failure:
+
+"That didn't go through. Here's what we can do."
+
+**Success messages are receipts, not celebrations.**
+
+Do not say "Congratulations!" or "Fantastic!" for routine actions.
+
+---
+
+# PHASE 9 — VOICE EXPERIENCE AND TURN-TAKING
+
+**Priority: P1**
+
+## Task 9.1 — Improve Text-to-Speech
+
+Review `speakSarah()` and `humanSpeech()`.
+
+- [ ] Remove literal `[pause]` text unless the selected TTS provider explicitly supports it.
+- [ ] Use supported TTS prosody mechanisms where available.
+- [ ] Keep Sarah's voice consistent across turns.
+- [ ] Avoid switching voices unexpectedly during fallback.
+- [ ] Verify pronunciation of VoIP, Telxent, MTS, Microsoft 365, eFax, and technical acronyms.
+- [ ] Read prices naturally.
+- [ ] Avoid reading Markdown formatting or raw JSON aloud.
+- [ ] Keep spoken output separate from rich UI card content.
+
+## Task 9.2 — Handle dead air
+
+The app must provide clear feedback during long operations.
+
+- [ ] Immediately indicate when Sarah begins a tool action.
+- [ ] Show a visible execution indicator.
+- [ ] If an operation takes longer than expected, provide a brief, truthful update.
+- [ ] Do not repeatedly speak status messages every few seconds.
+- [ ] Stop unnecessary updates once a result arrives.
+
+Do not invent backend progress to fill silence.
+
+## Task 9.3 — Interruption support
+
+- [ ] Review current microphone/speaker gating.
+- [ ] Support interruption when technically feasible.
+- [ ] When interrupted, stop queued speech and prioritize the customer's latest input.
+- [ ] Prevent stale audio responses from playing after a new turn begins.
+- [ ] Use cancellation/turn-generation IDs to ignore outdated results.
+- [ ] If full-duplex interruption is unavailable, provide an obvious Stop Speaking control.
+- [ ] Preserve safe microphone and echo-cancellation behavior.
+
+## Task 9.4 — Natural acknowledgment behavior
+
+When listening, Sarah may briefly acknowledge a customer with:
+
+"Mm-hmm."
+
+"Right."
+
+"Okay."
+
+"Go on."
+
+Only use backchannels when the voice architecture supports them without cutting off the speaker.
+
+## Task 9.5 — Microphone and call reliability
+
+- [ ] Maintain audio permissions correctly.
+- [ ] Handle microphone access failure.
+- [ ] Handle STT failure.
+- [ ] Handle TTS failure.
+- [ ] Handle user mute/unmute.
+- [ ] Handle call termination.
+- [ ] Prevent overlapping audio playback.
+- [ ] Prevent self-transcription from speaker output.
+- [ ] Ensure mobile browsers provide a usable fallback.
+
+**Acceptance criteria**
+
+Sarah delivers short, conversational speech without unnatural pause markers, overlapping turns, repetitive fillers, or extended unexplained silence.
+
+---
+
+# PHASE 10 — CONTEXT AND CONVERSATION MEMORY
+
+**Priority: P1**
+
+## Task 10.1 — Maintain conversation state
+
+Track:
+
+- Customer's current goal
+- Active issue
+- Current action
+- Pending confirmation
+- Selected service
+- Selected product
+- Service location
+- Quantity
+- Relevant account and order references
+- Already collected requirements
+- Previous troubleshooting steps
+- Unresolved follow-up questions
+
+## Task 10.2 — Improve history handling
+
+- [ ] Preserve useful context beyond the last few message strings.
+- [ ] Store active task slots in structured server-side state.
+- [ ] Summarize older conversation context when necessary.
+- [ ] Keep authenticated identity separate from conversation memory.
+- [ ] Resume unresolved operations after reconnection.
+- [ ] Do not re-execute actions when replaying conversation history.
+- [ ] Respect data-retention and privacy requirements.
+
+## Task 10.3 — Understand follow-up references
+
+Examples:
+
+"The second one."
+
+"Use the same office."
+
+"No, make it three."
+
+"Actually, cancel that."
+
+"How much would that cost?"
+
+Sarah must connect these statements with the existing task.
+
+If multiple operations could match a follow-up, confirm which one the customer means before acting.
+
+---
+
+# PHASE 11 — ERROR HANDLING AND RECOVERY
+
+**Priority: P0**
+
+## Task 11.1 — Standardize error classes
+
+Handle at least:
+
+- Authentication expired
+- Permission denied
+- Validation failure
+- Confirmation required
+- Confirmation expired
+- Duplicate action
+- Provider unavailable
+- Request timeout
+- Unknown execution outcome
+- Database error
+- External integration failure
+- Unsupported operation
+- Rate limiting
+- Browser disconnection
+
+## Task 11.2 — Recovery behavior
+
+| Scenario | Required Behavior |
+|---|---|
+| 401 Unauthorized | Ask user to sign in again; do not execute |
+| 403 Forbidden | Explain access limitation; no protected data |
+| Validation error | Request correction of the specific field |
+| Confirmation expired | Generate a fresh quote and confirmation |
+| Duplicate submission | Return existing action status/result |
+| Network timeout | Enter `checking_status` |
+| Provider outage | Report uncertainty and follow recovery policy |
+| Partial completion | Resume missing downstream work only |
+| Unexpected navigation | Preserve draft and request approval |
+| TTS error | Keep text result visible; use safe audio fallback |
+| STT error | Offer retry or typed input |
+
+Do not display internal stack traces or secrets to customers.
+
+## Task 11.3 — Background processing
+
+- [ ] Reuse existing job infrastructure where appropriate.
+- [ ] Require authentication for job triggers.
+- [ ] Ensure cron secrets fail closed when missing.
+- [ ] Reconcile incomplete operations on a defined schedule.
+- [ ] Avoid indefinite background loops.
+- [ ] Move unresolved operations to manual review after the configured retry policy.
+- [ ] Notify the appropriate staff only through authorized backend workflows.
+
+---
+
+# PHASE 12 — AUTOMATED TESTING AND QA
+
+**Priority: P2**
+
+Implement unit, integration, and end-to-end tests.
+
+## Functional tests
+
+- [ ] Read-only ticket lookup displays inline cards.
+- [ ] Read-only operations do not navigate.
+- [ ] Explicit navigation opens the requested page.
+- [ ] Unsaved drafts are protected.
+- [ ] Pending operations display banners.
+- [ ] Other portal controls remain usable.
+- [ ] Duplicate submission is blocked.
+- [ ] Success receipts use real backend IDs.
+- [ ] Failed operations show accurate status.
+
+## Confirmation tests
+
+- [ ] Paid VoIP extension cannot submit without valid approval.
+- [ ] Mentioning "$18" does not count as consent.
+- [ ] Wiring quantity and total are verified server-side.
+- [ ] Changing a price invalidates old approval.
+- [ ] Expired confirmation cannot be reused.
+- [ ] Confirmation belongs to the correct customer.
+- [ ] Customer cancellation prevents unstarted execution.
+
+## Recovery tests
+
+- [ ] Simulate HTTP timeout before the response.
+- [ ] Simulate database commit followed by lost response.
+- [ ] Simulate provider response loss.
+- [ ] Simulate duplicate webhook delivery.
+- [ ] Simulate page refresh during execution.
+- [ ] Simulate two browser tabs submitting the same action.
+- [ ] Verify idempotency and reconciliation.
+
+## Security tests
+
+- [ ] Cross-customer data access fails.
+- [ ] Cross-organization data access fails.
+- [ ] Unauthorized fields are never returned.
+- [ ] Client-supplied confirmation cannot bypass validation.
+- [ ] Malicious LLM tool parameters are rejected.
+- [ ] Unauthenticated mutation requests fail.
+
+## Voice and conversational tests
+
+- [ ] Sarah uses contractions naturally.
+- [ ] Sarah avoids repetitive acknowledgment phrases.
+- [ ] Sarah does not excessively repeat customer names.
+- [ ] Sarah responds appropriately to frustration.
+- [ ] Sarah handles corrections and interruptions.
+- [ ] Sarah does not joke during serious incidents.
+- [ ] Spoken prices and terms match backend values.
+- [ ] Sarah does not invent ticket/order status.
+
+## Build verification
+
+Run the repository's existing quality gates:
+
+- `npm run typecheck`
+- `npm test`
+- `npm run lint`
+- `npm run build`
+
+Add Playwright E2E coverage for the new agent UI.
+
+Record the commands, results, and any remaining limitations in the delivery report.
+
+---
+
+# PHASE 13 — RELEASE, MONITORING AND FINAL ACCEPTANCE
+
+**Priority: P2**
+
+## Task 13.1 — Progressive rollout
+
+- [ ] Introduce a feature flag for the new Sarah action engine.
+- [ ] Keep current working functionality available during migration.
+- [ ] Test in development and staging.
+- [ ] Use mock or sandbox provider responses for payment-related tests.
+- [ ] Enable the updated UI behind a controlled rollout.
+- [ ] Monitor failures, latency, and unresolved operations.
+- [ ] Define a rollback method that does not discard in-progress action records.
+
+## Task 13.2 — Observability
+
+Collect:
+
+- Tool success/failure rates
+- Time to first visible feedback
+- Time to first spoken response
+- Tool execution duration
+- Unknown-outcome frequency
+- Reconciliation success rate
+- Duplicate prevention count
+- Confirmation acceptance/decline rate
+- Manual-review volume
+- Cross-session recovery performance
+
+Do not record unnecessary customer speech or sensitive account content in diagnostic logs.
+
+## Task 13.3 — Final demo requirements
+
+The developer must demonstrate:
+
+**Demo 1 — Ticket lookup**
+
+Customer: "Sarah, can you show me my tickets?"
+
+Expected: Sarah retrieves tickets and displays inline cards. No automatic navigation.
+
+**Demo 2 — Intentional navigation**
+
+Customer: "Open the second ticket."
+
+Expected: Sarah navigates to that authorized ticket and retains relevant context.
+
+**Demo 3 — Paid VoIP extension**
+
+Customer: "I need another extension."
+
+Expected: Sarah collects requirements, explains the $18 monthly rate, requests confirmation, and submits only after approval.
+
+**Demo 4 — Timeout reconciliation**
+
+Simulate a successful backend write followed by a lost response.
+
+Expected: Sarah displays "I'm still checking whether that went through," reconciles the existing action, and never creates a duplicate.
+
+**Demo 5 — Permission enforcement**
+
+Attempt a cross-organization resource lookup.
+
+Expected: Backend denies it; Sarah does not expose hidden information.
+
+**Demo 6 — Conversational nuance**
+
+Customer: "My printer only works whenever it feels like it."
+
+Expected: Sarah responds naturally with brief light humor, then asks a useful diagnostic question.
+
+**Demo 7 — Urgent issue**
+
+Customer: "Our whole office network is down."
+
+Expected: Sarah immediately focuses on issue scope and appropriate troubleshooting, without laughter or unnecessary fillers.
+
+**Demo 8 — Long-running operation**
+
+While a request is processing, open another portal section.
+
+Expected: The portal remains usable, an accurate pending indicator remains accessible, and the final result is reconciled.
+
+---
+
+# REQUIRED FINAL DELIVERABLES
+
+The developer must deliver:
+
+- [ ] Updated Sarah tool-orchestration implementation.
+- [ ] Backend-enforced action state machine.
+- [ ] Durable action and confirmation records.
+- [ ] Typed server/client event contract.
+- [ ] Idempotent mutation execution.
+- [ ] Timeout reconciliation and manual-review handling.
+- [ ] Backend-enforced permission and field filtering.
+- [ ] Inline result components.
+- [ ] Explicit navigation controls.
+- [ ] Non-blocking operation banners.
+- [ ] Confirm-before-charge interface.
+- [ ] Transaction receipts and real reference IDs.
+- [ ] Updated Sarah conversational system prompt.
+- [ ] Removal of forced repetitive response prefixes.
+- [ ] Improved voice pacing, interruption, and audio fallbacks.
+- [ ] Structured conversation-state handling.
+- [ ] Automated tests and passing build checks.
+- [ ] Updated developer documentation.
+- [ ] Staging demonstration and rollback instructions.
+
+## DEFINITION OF DONE
+
+The project is complete only when:
+
+1. Sarah's read operations produce accurate inline information.
+2. The app navigates only with intentional customer approval or request.
+3. All mutations are authorized and validated server-side.
+4. Required financial confirmations are explicit and auditable.
+5. Duplicate submissions cannot create duplicate side effects.
+6. Timeout states are reconciled instead of guessed.
+7. The application stays usable during background execution.
+8. UI, voice, and backend report consistent action states.
+9. Sarah sounds naturally conversational without repetitive filler behavior.
+10. All security, regression, functional, and build checks pass.
+
+**FINAL ENGINEERING RULE:** Sarah may decide what action to propose, but the backend alone determines authorization, execution, and factual outcome. The UI reflects that outcome, and Sarah explains it naturally.
+
+**DELIVERY POLICY:** Preserve the existing MTS architecture, use typed modular code, make changes through reviewed pull requests, and never claim an untested feature is complete.
+
+### Required function-call state diagram
+
+This is the execution lifecycle the developer should implement.
+
+```mermaid
+
+flowchart TD
+    A["User requests action"] --> B["Requested"]
+    B --> C["Validate identity, permissions and input"]
+    C -->|Denied or invalid| D["Rejected: no execution"]
+    C -->|Read-only or approved| E["Executing"]
+    C -->|Financial or material change| F["Awaiting confirmation"]
+    F -->|Declined or expired| G["Cancelled"]
+    F -->|Valid explicit approval| E
+    E -->|Verified completed| H["Succeeded: show receipt"]
+    E -->|Definitive rejection| I["Failed: known outcome"]
+    E -->|Timeout or uncertain result| J["Checking status"]
+    J -->|Existing completion verified| H
+    J -->|Definitive failure verified| I
+    J -->|Still unknown| K["Manual review"]
+    K -->|Later reconciliation| J
+    classDef success fill:#d6f3e3,stroke:#21764f,color:#16452f
+    classDef wait fill:#fff0c2,stroke:#a17b17,color:#6d5105
+    classDef failure fill:#f8d9d9,stroke:#b74949,color:#702929
+    class H success
+    class F,J,K wait
+    class D,I failure
+```
+
+### Recommended implementation order
+
+Milestone 1 — Backend reliability (P0)
+
+State machine, authentication, tenant isolation, confirmation records, idempotency, and reconciliation. No paid agent mutations should go live until this passes.
+
+Milestone 2 — Agent-driven portal UX (P1)
+
+Inline tool results, intentional navigation, confirmation sheets, persistent pending banners, and receipts.
+
+Milestone 3 — Human conversation engine (P1)
+
+LLM intent handling, conversational nuances, TTS improvements, interruptions, and structured context.
+
+Milestone 4 — Verification and rollout (P2)
+
+Automated tests, simulated network failures, permission regression, voice QA, staging demo, and production rollout.
+
+Developer instruction: Treat this as an implementation specification, not a UI mockup. Every action must work end-to-end—conversation → intent → authorization → confirmation when needed → backend execution → state reconciliation → UI/voice response.

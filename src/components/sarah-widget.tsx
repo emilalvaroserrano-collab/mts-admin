@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Mic, MicOff, Phone, PhoneOff, Send, X } from "lucide-react";
-import { askSarah, hearSarah, speakSarah } from "@/lib/portal/sarah";
-import type { Planned } from "@/lib/portal/sarah-plan";
+import { askSarah, cancelSarahAction, confirmSarahAction, getSarahQuote, hearSarah, speakSarah } from "@/lib/portal/sarah";
 import { useShopToken } from "@/lib/portal/shop-session";
 import { addToCart } from "@/lib/portal/store-cart";
 
-type Line = { from: "sarah" | "you"; text: string };
-type Tour = { to: "/portal" | "/portal/tickets" | "/portal/tickets/new" | "/portal/shop" | "/portal/orders" | "/portal/billing" | "/portal/complaints" | "/portal/organization" | "/portal/account" | "/portal/my-services" | "/portal/quotes" | "/portal/notifications"; guide: string; label: string };
+type Line = { from: "sarah" | "you"; text: string; cards?: { title: string; detail: string }[] };
+type Receipt = { title: string; reference: string; amount: string; note: string };
+type Tour = { to: "/portal" | "/portal/tickets" | "/portal/tickets/new" | "/portal/shop" | "/portal/orders" | "/portal/billing" | "/portal/complaints" | "/portal/organization" | "/portal/account" | "/portal/my-services" | "/portal/quotes" | "/portal/notifications"; guide: string; label: string; ticketId?: string };
 type Gate = "idle" | "ringing" | "speaking" | "cooldown" | "listening";
 
 const GREETING = "Thank you for calling Manage Tech Service. This is Sarah. How can I help you today?";
@@ -26,6 +26,10 @@ function AgentMark({ className = "size-11" }: { className?: string }) {
       <circle cx="58" cy="52" r="2.5" fill="currentColor" />
     </svg>
   );
+}
+
+function sentLine(item: Receipt) {
+  return `Sent. ${item.reference} is in at ${item.amount}. ${item.note}`;
 }
 
 function words(value: string) {
@@ -56,7 +60,8 @@ export function SarahWidget() {
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pending, setPending] = useState<Planned | null>(null);
+  const [notice, setNotice] = useState("");
+  const [leave, setLeave] = useState<Tour | null>(null);
   const [gate, setGate] = useState<Gate>("idle");
   const [muted, setMuted] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -76,7 +81,16 @@ export function SarahWidget() {
   const ringRef = useRef<AudioContext | null>(null);
   const scroller = useRef<HTMLDivElement | null>(null);
   const linesRef = useRef<Line[]>([]);
-  const pendingRef = useRef<Planned | null>(null);
+  const speakGen = useRef(0);
+  const actionRef = useRef("");
+  const [actionId, setActionId] = useState("");
+  const [quote, setQuote] = useState<{ title: string; detail: string; amount: string } | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [spot, setSpot] = useState<{ right: number; bottom: number } | null>(null);
+  const [wide, setWide] = useState(false);
+  const drag = useRef<{ px: number; py: number; right: number; bottom: number; moved: boolean; spot: { right: number; bottom: number } | null } | null>(null);
+  const skipClick = useRef(false);
+  const openRef = useRef(false);
 
   function setPhase(next: Gate) {
     gateRef.current = next;
@@ -192,7 +206,7 @@ export function SarahWidget() {
       return;
     }
     setPhase("cooldown");
-    await new Promise((resolve) => window.setTimeout(resolve, 280));
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
     setPhase("idle");
   }
 
@@ -242,7 +256,7 @@ export function SarahWidget() {
       if (gateRef.current === "listening") setPhase("idle");
       window.setTimeout(() => {
         if (hearGen.current === gen && live.current && !mutedRef.current && !busyRef.current && gateRef.current === "idle") listen();
-      }, 300);
+      }, 60);
     };
     try { rec.start(); } catch { setPhase("idle"); void listenWithVad(); }
   }
@@ -292,7 +306,7 @@ export function SarahWidget() {
         ear.cool = hot ? 0 : ear.cool + 1;
         ear.spoken += 1;
         if (ear.closing) return;
-        if (ear.cool >= 16 || ear.spoken > 200) {
+        if (ear.cool >= 6 || ear.spoken > 160) {
           ear.closing = true;
           void finishUtterance(ear);
         }
@@ -392,10 +406,59 @@ export function SarahWidget() {
     }
   }
 
+  function unsavedWork() {
+    const fields = document.querySelectorAll("main textarea, main input[name]");
+    return [...fields].some((node) => (node as HTMLInputElement).value.trim().length > 0);
+  }
+
+  function openTour(show: Tour) {
+    setTour(show);
+    if (show.ticketId) void navigate({ to: "/portal/tickets/$ticketId", params: { ticketId: show.ticketId } });
+    else void navigate({ to: show.to });
+  }
+
+  function goTo(show: Tour) {
+    if (unsavedWork()) {
+      setLeave(show);
+      return;
+    }
+    setLeave(null);
+    openTour(show);
+  }
+
+  async function decide(decision: "confirm" | "cancel") {
+    const id = actionRef.current;
+    if (!token || !id || busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    setError("");
+    try {
+      const result = decision === "confirm"
+        ? await confirmSarahAction({ data: { token, actionId: id } })
+        : await cancelSarahAction({ data: { token, actionId: id } });
+      actionRef.current = result.actionId;
+      setActionId(result.actionId);
+      setQuote(null);
+      setReceipt(result.receipt);
+      if (result.cartSku) addToCart(result.cartSku, 1);
+      const text = decision === "confirm" && result.receipt && result.status === "succeeded" ? sentLine(result.receipt) : result.reply;
+      const withReply = [...linesRef.current, { from: "sarah" as const, text }];
+      linesRef.current = withReply;
+      setLines(withReply);
+      if (mode === "call" && live.current && result.receipt) void playSarah(text);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Sarah couldn't reach the desk.");
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
   async function turn(text: string, channel: "chat" | "call") {
     const said = text.trim();
     if (!said || !token || busyRef.current) return;
     if (channel === "call" && isEcho(said, spokenRef.current)) return;
+    const mine = ++speakGen.current;
     stopMic();
     busyRef.current = true;
     setBusy(true);
@@ -406,17 +469,18 @@ export function SarahWidget() {
     setDraft("");
     setError("");
     try {
-      const result = await askSarah({ data: { token, text: said, channel, pending: pendingRef.current, history } });
-      pendingRef.current = result.pending;
-      setPending(result.pending);
+      const result = await askSarah({ data: { token, text: said, channel, actionId: actionRef.current, history } });
+      actionRef.current = result.actionId;
+      setActionId(result.actionId);
+      setQuote(result.quote);
+      setReceipt(null);
+      setNotice(result.notice || "");
       if (result.cartSku) addToCart(result.cartSku, 1);
-      const withReply = [...linesRef.current, { from: "sarah" as const, text: result.reply }];
+      const withReply = [...linesRef.current, { from: "sarah" as const, text: result.reply, cards: result.cards }];
       linesRef.current = withReply;
       setLines(withReply);
-      if (result.show) {
-        setTour(result.show);
-        void navigate({ to: result.show.to });
-      }
+      if (result.navigate && result.show) goTo(result.show);
+      if (speakGen.current !== mine) return;
       if (channel === "call" && live.current) await playSarah(result.reply);
       else if (result.show) void playSarah(result.reply, true);
     } catch (cause) {
@@ -438,8 +502,10 @@ export function SarahWidget() {
     setPhase("ringing");
     setLines([]);
     linesRef.current = [];
-    pendingRef.current = null;
-    setPending(null);
+    actionRef.current = "";
+    setActionId("");
+    setQuote(null);
+    setReceipt(null);
     await ringTwice();
     if (!live.current) return;
     const greeting = [{ from: "sarah" as const, text: GREETING }];
@@ -464,6 +530,30 @@ export function SarahWidget() {
     endCall();
     setOpen(false);
   }
+
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const apply = () => setWide(media.matches);
+    apply();
+    media.addEventListener("change", apply);
+    const saved = window.localStorage.getItem("mts-sarah-spot");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as { right?: number; bottom?: number };
+        if (typeof parsed.right === "number" && typeof parsed.bottom === "number") setSpot({ right: parsed.right, bottom: parsed.bottom });
+      } catch { /* keep the default corner */ }
+    }
+    const toggle = () => { if (openRef.current) close(); else setOpen(true); };
+    window.addEventListener("mts-sarah-toggle", toggle);
+    return () => {
+      media.removeEventListener("change", apply);
+      window.removeEventListener("mts-sarah-toggle", toggle);
+    };
+  }, []);
 
   function toggleMute() {
     const next = !mutedRef.current;
@@ -500,11 +590,26 @@ export function SarahWidget() {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
   }, [lines, mode]);
 
+  useEffect(() => {
+    if (!open || !token) return;
+    void getSarahQuote({ data: { token } }).then((saved) => {
+      if (!saved.actionId) return;
+      actionRef.current = saved.actionId;
+      setActionId(saved.actionId);
+      setQuote(saved.quote);
+    }).catch(() => undefined);
+  }, [open, token]);
+
   const talking = gate === "speaking" || gate === "cooldown";
   const hearing = gate === "listening";
+  const full = open && mode !== "menu" && !tour;
+  const place = wide && spot ? { right: spot.right, bottom: spot.bottom } : undefined;
 
   return (
-    <div className={open && mode !== "menu" && !tour ? "fixed inset-0 z-40 flex md:inset-auto md:right-4 md:bottom-4 md:w-[24rem]" : "fixed inset-x-0 bottom-0 z-40 flex justify-end md:inset-x-auto md:right-4"} style={open && mode !== "menu" && !tour ? undefined : { paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
+    <div
+      className={full ? "fixed inset-0 z-40 flex md:inset-auto md:right-4 md:bottom-4 md:w-[24rem]" : open ? "fixed inset-x-0 bottom-0 z-40 flex justify-end md:inset-x-auto md:right-4 md:bottom-4 md:w-[24rem]" : "fixed z-40 hidden md:right-4 md:bottom-4 md:flex"}
+      style={full && !wide ? undefined : { ...place, paddingBottom: place ? undefined : "max(0.75rem, env(safe-area-inset-bottom))" }}
+    >
       <div className={open && mode !== "menu" && !tour ? "flex h-full w-full flex-col" : "flex w-full flex-col items-stretch gap-2 px-3 md:w-[24rem] md:items-end md:px-0"}>
         <audio ref={dockAudio} playsInline preload="auto" className="hidden" />
         {open && mode === "chat" ? (
@@ -519,12 +624,52 @@ export function SarahWidget() {
             </header>
             <div ref={scroller} className="flex min-h-0 flex-col gap-2 overflow-y-auto px-3 py-3">
               {lines.map((line, index) => (
-                <p key={`${line.from}-${index}`} className={line.from === "you" ? "max-w-[80%] self-end rounded-2xl rounded-br-md bg-[#d9fdd3] px-3 py-2 text-sm text-[#111]" : "max-w-[80%] self-start rounded-2xl rounded-bl-md bg-white px-3 py-2 text-sm text-[#111] shadow-sm"}>
-                  {line.text}
-                </p>
+                <div key={`${line.from}-${index}`} className={line.from === "you" ? "max-w-[80%] self-end" : "grid max-w-[80%] gap-2 self-start"}>
+                  <p className={line.from === "you" ? "rounded-2xl rounded-br-md bg-[#d9fdd3] px-3 py-2 text-sm text-[#111]" : "rounded-2xl rounded-bl-md bg-white px-3 py-2 text-sm text-[#111] shadow-sm"}>
+                    {line.text}
+                  </p>
+                  {line.cards?.map((card) => (
+                    <div key={card.title} className="rounded-xl border border-line bg-white px-3 py-2 text-sm">
+                      <p className="font-semibold">{card.title}</p>
+                      <p className="text-muted">{card.detail}</p>
+                    </div>
+                  ))}
+                </div>
               ))}
             </div>
-            {error ? <p className="px-3 text-sm text-bad">{error}</p> : null}
+            {notice ? <p className="bg-[#fff7e8] px-3 py-2 text-xs text-[#6d5105]">{notice}</p> : null}
+            {leave ? (
+              <div className="grid gap-2 bg-white px-3 py-2">
+                <p className="text-sm">You have something typed on this page. Leave it and open {leave.label}?</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setLeave(null)} className="h-10 flex-1 rounded-full border border-line text-sm font-semibold">Stay</button>
+                  <button type="button" onClick={() => { const next = leave; setLeave(null); if (next) openTour(next); }} className="h-10 flex-1 rounded-full bg-[#075e54] text-sm font-semibold text-white">Leave</button>
+                </div>
+              </div>
+            ) : null}
+            {actionId ? (
+              <div className="grid gap-2 bg-white px-3 py-2">
+                {quote ? (
+                  <div>
+                    <p className="text-sm font-semibold">{quote.title}</p>
+                    <p className="text-sm">{quote.amount}</p>
+                    <p className="text-xs text-muted">{quote.detail}</p>
+                  </div>
+                ) : <p className="text-sm">Confirm this before I send it.</p>}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void decide("confirm")} className="h-10 flex-1 rounded-full bg-[#075e54] text-sm font-semibold text-white">Confirm</button>
+                  <button type="button" onClick={() => void decide("cancel")} className="h-10 flex-1 rounded-full border border-line text-sm font-semibold">Cancel</button>
+                </div>
+              </div>
+            ) : null}
+            {receipt ? (
+              <div className="grid gap-1 bg-[#d6f3e3] px-3 py-2">
+                <p className="text-sm font-semibold text-[#16452f]">Sent</p>
+                <p className="text-sm text-[#16452f]">{receipt.reference} is in at {receipt.amount}.</p>
+                <p className="text-xs text-[#21764f]">{receipt.note}</p>
+              </div>
+            ) : null}
+            {error ? <p className="bg-white px-3 pb-1 text-sm text-bad">{error}</p> : null}
             <form className="flex items-center gap-2 bg-[#f0f2f5] px-3 py-2" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }} onSubmit={(event) => { event.preventDefault(); void turn(draft, "chat"); }}>
               <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message" aria-label="Message Sarah" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" />
               <button type="submit" disabled={busy || !draft.trim()} aria-label="Send" className="grid size-11 shrink-0 place-items-center rounded-full bg-[#075e54] text-white disabled:opacity-40"><Send className="size-4" /></button>
@@ -545,7 +690,30 @@ export function SarahWidget() {
               <p className="line-clamp-3 max-w-xs text-sm text-white/80">{gate === "ringing" ? "Calling Sarah" : heard ? heard : lines.at(-1)?.text}</p>
             </div>
             <div className="grid gap-3 px-4 pt-2" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
-              {error ? <p className="text-center text-sm text-red-300">{error}</p> : null}
+              {notice ? <p className="text-center text-sm text-amber-200">{notice}</p> : null}
+              {receipt ? (
+                <div className="grid gap-1 rounded-xl bg-emerald-900/60 px-3 py-2 text-center">
+                  <p className="text-sm font-semibold text-emerald-200">Sent</p>
+                  <p className="text-sm">{receipt.reference} is in at {receipt.amount}.</p>
+                  <p className="text-xs text-emerald-100/80">{receipt.note}</p>
+                </div>
+              ) : null}
+              <button type="button" onClick={() => { speakGen.current += 1; stopSpeaker(); setPhase("idle"); }} className="mx-auto h-10 rounded-full bg-white/10 px-4 text-sm">Stop speaking</button>
+              {actionId ? (
+                <div className="grid gap-2">
+                  {quote ? (
+                    <div className="text-center">
+                      <p className="text-sm font-semibold">{quote.title}</p>
+                      <p className="text-sm">{quote.amount}</p>
+                      <p className="text-xs text-white/70">{quote.detail}</p>
+                    </div>
+                  ) : null}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => void decide("confirm")} className="h-11 flex-1 rounded-full bg-white text-sm font-semibold text-[#101418]">Confirm</button>
+                    <button type="button" onClick={() => void decide("cancel")} className="h-11 flex-1 rounded-full bg-white/10 text-sm font-semibold">Cancel</button>
+                  </div>
+                </div>
+              ) : null}
               <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); unlockAudio(); void turn(draft, "call"); }}>
                 <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type if you need to" aria-label="Say this to Sarah" className="h-11 min-w-0 flex-1 rounded-full bg-white/10 px-4 text-sm outline-none" />
                 <button type="submit" disabled={busy || !draft.trim()} aria-label="Send" className="grid size-11 place-items-center rounded-full bg-white/15 disabled:opacity-40"><Send className="size-4" /></button>
@@ -579,7 +747,47 @@ export function SarahWidget() {
             </div>
           </section>
         ) : null}
-        <button type="button" aria-label="Talk to Sarah" aria-expanded={open} onPointerDown={unlockAudio} onClick={() => (open && mode === "menu" ? close() : setOpen(true))} className={open && mode !== "menu" && !tour ? "hidden" : "grid size-16 place-items-center self-end rounded-full bg-[#f3f3f3] text-[#4a4a4a] shadow-[0_8px_24px_rgba(15,23,42,0.18)] ring-4 ring-white"}>
+        <button
+          type="button"
+          aria-label="Talk to Sarah"
+          aria-expanded={open}
+          onPointerDown={(event) => {
+            unlockAudio();
+            if (!wide) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            drag.current = { px: event.clientX, py: event.clientY, right: window.innerWidth - rect.right, bottom: window.innerHeight - rect.bottom, moved: false, spot: null };
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={(event) => {
+            const current = drag.current;
+            if (!current) return;
+            const right = current.right - (event.clientX - current.px);
+            const bottom = current.bottom - (event.clientY - current.py);
+            const next = {
+              right: Math.min(window.innerWidth - 72, Math.max(8, right)),
+              bottom: Math.min(window.innerHeight - 72, Math.max(8, bottom)),
+            };
+            if (Math.hypot(event.clientX - current.px, event.clientY - current.py) > 6) current.moved = true;
+            current.spot = next;
+            setSpot(next);
+          }}
+          onPointerUp={() => {
+            const current = drag.current;
+            drag.current = null;
+            if (!current?.moved || !current.spot) return;
+            skipClick.current = true;
+            window.localStorage.setItem("mts-sarah-spot", JSON.stringify(current.spot));
+          }}
+          onClick={() => {
+            if (skipClick.current) {
+              skipClick.current = false;
+              return;
+            }
+            if (open && mode === "menu") close();
+            else setOpen(true);
+          }}
+          className={full ? "hidden" : "grid size-16 cursor-grab place-items-center self-end rounded-full bg-[#f3f3f3] text-[#4a4a4a] shadow-[0_8px_24px_rgba(15,23,42,0.18)] ring-4 ring-white active:cursor-grabbing"}
+        >
           <AgentMark />
         </button>
       </div>
@@ -589,6 +797,14 @@ export function SarahWidget() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export function SarahHeaderButton() {
+  return (
+    <button type="button" className="grid size-11 place-items-center rounded-xl md:hidden" aria-label="Talk to Sarah" onClick={() => window.dispatchEvent(new Event("mts-sarah-toggle"))}>
+      <AgentMark className="size-6" />
+    </button>
   );
 }
 

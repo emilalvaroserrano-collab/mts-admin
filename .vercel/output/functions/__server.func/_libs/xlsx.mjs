@@ -1,4 +1,25 @@
+import { r as __exportAll } from "../_runtime.mjs";
 //#region node_modules/xlsx/xlsx.mjs
+var xlsx_exports = /* @__PURE__ */ __exportAll({
+	CFB: () => CFB,
+	SSF: () => SSF,
+	parse_xlscfb: () => parse_xlscfb,
+	parse_zip: () => parse_zip,
+	read: () => readSync,
+	readFile: () => readFileSync,
+	readFileSync: () => readFileSync,
+	set_cptable: () => set_cptable,
+	set_fs: () => set_fs,
+	stream: () => __stream,
+	utils: () => utils,
+	version: () => version,
+	write: () => writeSync,
+	writeFile: () => writeFileSync,
+	writeFileAsync: () => writeFileAsync,
+	writeFileSync: () => writeFileSync,
+	writeFileXLSX: () => writeFileSyncXLSX,
+	writeXLSX: () => writeSyncXLSX
+});
 /*! xlsx.js (C) 2013-present SheetJS -- http://sheetjs.com */
 var XLSX = {};
 XLSX.version = "0.18.5";
@@ -87,6 +108,25 @@ var _getansi = function _ga1(x) {
 	return String.fromCharCode(x);
 };
 var $cptable;
+function set_cptable(cptable) {
+	$cptable = cptable;
+	set_cp = function(cp) {
+		current_codepage = cp;
+		set_ansi(cp);
+	};
+	debom = function(data) {
+		if (data.charCodeAt(0) === 255 && data.charCodeAt(1) === 254) return $cptable.utils.decode(1200, char_codes(data.slice(2)));
+		return data;
+	};
+	_getchar = function _gc2(x) {
+		if (current_codepage === 1200) return String.fromCharCode(x);
+		return $cptable.utils.decode(current_codepage, [x & 255, x >> 8])[0];
+	};
+	_getansi = function _ga2(x) {
+		return $cptable.utils.decode(current_ansi, [x])[0];
+	};
+	cpdoit();
+}
 var DENSE = null;
 var DIF_XL = true;
 var Base64_map = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -1637,6 +1677,17 @@ function SSF_load_table(tbl) {
 function make_ssf() {
 	table_fmt = SSF_init_table();
 }
+var SSF = {
+	format: SSF_format,
+	load: SSF_load,
+	_table: table_fmt,
+	load_table: SSF_load_table,
+	parse_date_code: SSF_parse_date_code,
+	is_date: fmt_is_date,
+	get_table: function get_table() {
+		return SSF._table = table_fmt;
+	}
+};
 var SSFImplicit = {
 	"5": "\"$\"#,##0_);\\(\"$\"#,##0\\)",
 	"6": "\"$\"#,##0_);[Red]\\(\"$\"#,##0\\)",
@@ -3473,6 +3524,9 @@ var CFB = /*#__PURE__*/ (function _CFB() {
 	return exports;
 })();
 var _fs = void 0;
+function set_fs(fs) {
+	_fs = fs;
+}
 function blobify(data) {
 	if (typeof data === "string") return s2ab(data);
 	if (Array.isArray(data)) return a2u(data);
@@ -4324,6 +4378,35 @@ if (has_buf) {
 		return Buffer.isBuffer(a) || Array.isArray(a) || typeof Uint8Array !== "undefined" && a instanceof Uint8Array;
 	};
 }
+function cpdoit() {
+	__utf16le = function(b, s, e) {
+		return $cptable.utils.decode(1200, b.slice(s, e)).replace(chr0, "");
+	};
+	__utf8 = function(b, s, e) {
+		return $cptable.utils.decode(65001, b.slice(s, e));
+	};
+	__lpstr = function(b, i) {
+		var len = __readUInt32LE(b, i);
+		return len > 0 ? $cptable.utils.decode(current_ansi, b.slice(i + 4, i + 4 + len - 1)) : "";
+	};
+	__cpstr = function(b, i) {
+		var len = __readUInt32LE(b, i);
+		return len > 0 ? $cptable.utils.decode(current_codepage, b.slice(i + 4, i + 4 + len - 1)) : "";
+	};
+	__lpwstr = function(b, i) {
+		var len = 2 * __readUInt32LE(b, i);
+		return len > 0 ? $cptable.utils.decode(1200, b.slice(i + 4, i + 4 + len - 1)) : "";
+	};
+	__lpp4 = function(b, i) {
+		var len = __readUInt32LE(b, i);
+		return len > 0 ? $cptable.utils.decode(1200, b.slice(i + 4, i + 4 + len)) : "";
+	};
+	__8lpp4 = function(b, i) {
+		var len = __readUInt32LE(b, i);
+		return len > 0 ? $cptable.utils.decode(65001, b.slice(i + 4, i + 4 + len)) : "";
+	};
+}
+if (typeof $cptable !== "undefined") cpdoit();
 var __readUInt8 = function(b, idx) {
 	return b[idx];
 };
@@ -4362,7 +4445,11 @@ function ReadShift(size, t) {
 			size *= 2;
 			o = __utf16le(this, this.l, this.l + size);
 			break;
-		case "wstr": return ReadShift.call(this, size, "dbcs");
+		case "wstr":
+			if (typeof $cptable !== "undefined") o = $cptable.utils.decode(current_codepage, this.slice(this.l, this.l + 2 * size));
+			else return ReadShift.call(this, size, "dbcs");
+			size = 2 * size;
+			break;
 		case "lpstr-ansi":
 			o = __lpstr(this, this.l);
 			size = 4 + __readUInt32LE(this, this.l);
@@ -4417,7 +4504,10 @@ function ReadShift(size, t) {
 			o = oo.join("");
 			size *= 2;
 			break;
-		case "cpstr":
+		case "cpstr": if (typeof $cptable !== "undefined") {
+			o = $cptable.utils.decode(current_codepage, this.slice(this.l, this.l + size));
+			break;
+		}
 		case "sbcs-cont":
 			o = "";
 			loc = this.l;
@@ -4497,8 +4587,14 @@ function WriteShift(t, val, f) {
 		for (i = 0; i != val.length; ++i) __writeUInt16LE(this, val.charCodeAt(i), this.l + 2 * i);
 		size = 2 * val.length;
 	} else if (f === "sbcs") {
-		val = val.replace(/[^\x00-\x7F]/g, "_");
-		for (i = 0; i != val.length; ++i) this[this.l + i] = val.charCodeAt(i) & 255;
+		if (typeof $cptable !== "undefined" && current_ansi == 874) for (i = 0; i != val.length; ++i) {
+			var cppayload = $cptable.utils.encode(current_ansi, val.charAt(i));
+			this[this.l + i] = cppayload[0];
+		}
+		else {
+			val = val.replace(/[^\x00-\x7F]/g, "_");
+			for (i = 0; i != val.length; ++i) this[this.l + i] = val.charCodeAt(i) & 255;
+		}
 		size = val.length;
 	} else if (f === "hex") {
 		for (; i < t; ++i) this[this.l++] = parseInt(val.slice(2 * i, 2 * i + 2), 16) || 0;
@@ -8823,6 +8919,7 @@ var SYLK = /*#__PURE__*/ (function() {
 								val = fuzzynum(val);
 								if (next_cell_format !== null && fmt_is_date(next_cell_format)) val = numdate(val);
 							} else if (!isNaN(fuzzydate(val).getDate())) val = parseDate(val);
+							if (typeof $cptable !== "undefined" && typeof val == "string" && (opts || {}).type != "string" && (opts || {}).codepage) val = $cptable.utils.decode(opts.codepage, val);
 							C_seen_K = true;
 							break;
 						case "E":
@@ -9441,7 +9538,7 @@ var PRN = /*#__PURE__*/ (function() {
 				break;
 			case "buffer":
 				if (opts.codepage == 65001) str = d.toString("utf8");
-				else if (opts.codepage && false);
+				else if (opts.codepage && typeof $cptable !== "undefined") str = $cptable.utils.decode(opts.codepage, d);
 				else str = has_buf && Buffer.isBuffer(d) ? d.toString("binary") : a2s(d);
 				break;
 			case "array":
@@ -9454,7 +9551,7 @@ var PRN = /*#__PURE__*/ (function() {
 		}
 		if (bytes[0] == 239 && bytes[1] == 187 && bytes[2] == 191) str = utf8read(str.slice(3));
 		else if (opts.type != "string" && opts.type != "buffer" && opts.codepage == 65001) str = utf8read(str);
-		else if (opts.type == "binary" && false);
+		else if (opts.type == "binary" && typeof $cptable !== "undefined" && opts.codepage) str = $cptable.utils.decode(opts.codepage, $cptable.utils.encode(28591, str));
 		if (str.slice(0, 19) == "socialcalc:version:") return ETH.to_sheet(opts.type == "string" ? str : utf8read(str), opts);
 		return prn_to_sheet_str(str, opts);
 	}
@@ -10760,6 +10857,7 @@ function write_sst_bin(sst) {
 	return ba.end();
 }
 function _JS2ANSI(str) {
+	if (typeof $cptable !== "undefined") return $cptable.utils.encode(current_ansi, str);
 	var o = [], oo = str.split("");
 	for (var i = 0; i < oo.length; ++i) o[i] = oo[i].charCodeAt(0);
 	return o;
@@ -18818,7 +18916,10 @@ function parse_xlml_xml(d, _opts) {
 	var opts = _opts || {};
 	make_ssf();
 	var str = debom(xlml_normalize(d));
-	if (opts.type == "binary" || opts.type == "array" || opts.type == "base64") str = utf8read(str);
+	if (opts.type == "binary" || opts.type == "array" || opts.type == "base64") {
+		if (typeof $cptable !== "undefined") str = $cptable.utils.decode(65001, char_codes(str));
+		else str = utf8read(str);
+	}
 	var opening = str.slice(0, 1024).toLowerCase(), ishtml = false;
 	opening = opening.replace(/".*?"/g, "");
 	if ((opening.indexOf(">") & 1023) > Math.min(opening.indexOf(",") & 1023, opening.indexOf(";") & 1023)) {
@@ -25521,6 +25622,11 @@ function readSync(data, opts) {
 	if (DBF_SUPPORTED_VERSIONS.indexOf(n[0]) > -1 && n[2] <= 12 && n[3] <= 31) return DBF.to_workbook(d, o);
 	return read_prn(data, d, o, str);
 }
+function readFileSync(filename, opts) {
+	var o = opts || {};
+	o.type = "file";
+	return readSync(filename, o);
+}
 function write_cfb_ctr(cfb, o) {
 	switch (o.type) {
 		case "base64":
@@ -25538,6 +25644,10 @@ function write_cfb_ctr(cfb, o) {
 function write_zip_type(wb, opts) {
 	var o = dup(opts || {});
 	return write_zip_denouement(write_zip(wb, o), o);
+}
+function write_zip_typeXLSX(wb, opts) {
+	var o = dup(opts || {});
+	return write_zip_denouement(write_zip_xlsx(wb, o), o);
 }
 function write_zip_denouement(z, o) {
 	var oopts = {};
@@ -25622,6 +25732,22 @@ function write_binary_type(out, opts) {
 		default: throw new Error("Unrecognized type " + opts.type);
 	}
 }
+function writeSyncXLSX(wb, opts) {
+	reset_cp();
+	check_wb(wb);
+	var o = dup(opts || {});
+	if (o.cellStyles) {
+		o.cellNF = true;
+		o.sheetStubs = true;
+	}
+	if (o.type == "array") {
+		o.type = "binary";
+		var out = writeSyncXLSX(wb, o);
+		o.type = "array";
+		return s2ab(out);
+	}
+	return write_zip_typeXLSX(wb, o);
+}
 function writeSync(wb, opts) {
 	reset_cp();
 	check_wb(wb);
@@ -25698,6 +25824,23 @@ function writeFileSync(wb, filename, opts) {
 	o.file = filename;
 	resolve_book_type(o);
 	return writeSync(wb, o);
+}
+function writeFileSyncXLSX(wb, filename, opts) {
+	var o = opts || {};
+	o.type = "file";
+	o.file = filename;
+	resolve_book_type(o);
+	return writeSyncXLSX(wb, o);
+}
+function writeFileAsync(filename, wb, opts, cb) {
+	var o = opts || {};
+	o.type = "file";
+	o.file = filename;
+	resolve_book_type(o);
+	o.type = "buffer";
+	var _cb = cb;
+	if (!(_cb instanceof Function)) _cb = opts;
+	return _fs.writeFile(filename, writeSync(wb, o), _cb);
 }
 function make_json_row(sheet, r, R, cols, header, hdr, dense, o) {
 	var rr = encode_row(R);
@@ -25888,7 +26031,10 @@ function sheet_to_txt(sheet, opts) {
 	if (!opts) opts = {};
 	opts.FS = "	";
 	opts.RS = "\n";
-	return sheet_to_csv(sheet, opts);
+	var s = sheet_to_csv(sheet, opts);
+	if (typeof $cptable == "undefined" || opts.type == "string") return s;
+	var o = $cptable.utils.encode(1200, s, "str");
+	return String.fromCharCode(255) + String.fromCharCode(254) + o;
 }
 function sheet_to_formulae(sheet) {
 	var y = "", x, val = "";
@@ -26152,6 +26298,171 @@ var utils = {
 		SHEET_VERY_HIDDEN: 2
 	}
 };
-XLSX.version;
+var _Readable;
+function set_readable(R) {
+	_Readable = R;
+}
+function write_csv_stream(sheet, opts) {
+	var stream = _Readable();
+	var o = opts == null ? {} : opts;
+	if (sheet == null || sheet["!ref"] == null) {
+		stream.push(null);
+		return stream;
+	}
+	var r = safe_decode_range(sheet["!ref"]);
+	var FS = o.FS !== void 0 ? o.FS : ",", fs = FS.charCodeAt(0);
+	var RS = o.RS !== void 0 ? o.RS : "\n", rs = RS.charCodeAt(0);
+	var endregex = new RegExp((FS == "|" ? "\\|" : FS) + "+$");
+	var row = "", cols = [];
+	o.dense = Array.isArray(sheet);
+	var colinfo = o.skipHidden && sheet["!cols"] || [];
+	var rowinfo = o.skipHidden && sheet["!rows"] || [];
+	for (var C = r.s.c; C <= r.e.c; ++C) if (!(colinfo[C] || {}).hidden) cols[C] = encode_col(C);
+	var R = r.s.r;
+	var BOM = false, w = 0;
+	stream._read = function() {
+		if (!BOM) {
+			BOM = true;
+			return stream.push("﻿");
+		}
+		while (R <= r.e.r) {
+			++R;
+			if ((rowinfo[R - 1] || {}).hidden) continue;
+			row = make_csv_row(sheet, r, R - 1, cols, fs, rs, FS, o);
+			if (row != null) {
+				if (o.strip) row = row.replace(endregex, "");
+				if (row || o.blankrows !== false) return stream.push((w++ ? RS : "") + row);
+			}
+		}
+		return stream.push(null);
+	};
+	return stream;
+}
+function write_html_stream(ws, opts) {
+	var stream = _Readable();
+	var o = opts || {};
+	var header = o.header != null ? o.header : HTML_BEGIN;
+	var footer = o.footer != null ? o.footer : HTML_END;
+	stream.push(header);
+	var r = decode_range(ws["!ref"]);
+	o.dense = Array.isArray(ws);
+	stream.push(make_html_preamble(ws, r, o));
+	var R = r.s.r;
+	var end = false;
+	stream._read = function() {
+		if (R > r.e.r) {
+			if (!end) {
+				end = true;
+				stream.push("</table>" + footer);
+			}
+			return stream.push(null);
+		}
+		while (R <= r.e.r) {
+			stream.push(make_html_row(ws, r, R, o));
+			++R;
+			break;
+		}
+	};
+	return stream;
+}
+function write_json_stream(sheet, opts) {
+	var stream = _Readable({ objectMode: true });
+	if (sheet == null || sheet["!ref"] == null) {
+		stream.push(null);
+		return stream;
+	}
+	var val = {
+		t: "n",
+		v: 0
+	}, header = 0, offset = 1, hdr = [], v = 0, vv = "";
+	var r = {
+		s: {
+			r: 0,
+			c: 0
+		},
+		e: {
+			r: 0,
+			c: 0
+		}
+	};
+	var o = opts || {};
+	var range = o.range != null ? o.range : sheet["!ref"];
+	if (o.header === 1) header = 1;
+	else if (o.header === "A") header = 2;
+	else if (Array.isArray(o.header)) header = 3;
+	switch (typeof range) {
+		case "string":
+			r = safe_decode_range(range);
+			break;
+		case "number":
+			r = safe_decode_range(sheet["!ref"]);
+			r.s.r = range;
+			break;
+		default: r = range;
+	}
+	if (header > 0) offset = 0;
+	var rr = encode_row(r.s.r);
+	var cols = [];
+	var counter = 0;
+	var dense = Array.isArray(sheet);
+	var R = r.s.r, C = 0;
+	var header_cnt = {};
+	if (dense && !sheet[R]) sheet[R] = [];
+	var colinfo = o.skipHidden && sheet["!cols"] || [];
+	var rowinfo = o.skipHidden && sheet["!rows"] || [];
+	for (C = r.s.c; C <= r.e.c; ++C) {
+		if ((colinfo[C] || {}).hidden) continue;
+		cols[C] = encode_col(C);
+		val = dense ? sheet[R][C] : sheet[cols[C] + rr];
+		switch (header) {
+			case 1:
+				hdr[C] = C - r.s.c;
+				break;
+			case 2:
+				hdr[C] = cols[C];
+				break;
+			case 3:
+				hdr[C] = o.header[C - r.s.c];
+				break;
+			default:
+				if (val == null) val = {
+					w: "__EMPTY",
+					t: "s"
+				};
+				vv = v = format_cell(val, null, o);
+				counter = header_cnt[v] || 0;
+				if (!counter) header_cnt[v] = 1;
+				else {
+					do
+						vv = v + "_" + counter++;
+					while (header_cnt[vv]);
+					header_cnt[v] = counter;
+					header_cnt[vv] = 1;
+				}
+				hdr[C] = vv;
+		}
+	}
+	R = r.s.r + offset;
+	stream._read = function() {
+		while (R <= r.e.r) {
+			if ((rowinfo[R - 1] || {}).hidden) continue;
+			var row = make_json_row(sheet, r, R, cols, header, hdr, dense, o);
+			++R;
+			if (row.isempty === false || (header === 1 ? o.blankrows !== false : !!o.blankrows)) {
+				stream.push(row.row);
+				return;
+			}
+		}
+		return stream.push(null);
+	};
+	return stream;
+}
+var __stream = {
+	to_json: write_json_stream,
+	to_html: write_html_stream,
+	to_csv: write_csv_stream,
+	set_readable
+};
+var version = XLSX.version;
 //#endregion
-export { utils as n, writeFileSync as r, readSync as t };
+export { xlsx_exports as t };
