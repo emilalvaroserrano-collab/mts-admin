@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { useNavigate } from "@tanstack/react-router";
 import { Mic, MicOff, Phone, PhoneOff, Send, X } from "lucide-react";
 import { askSarah, cancelSarahAction, confirmSarahAction, getSarahQuote, hearSarah, speakSarah } from "@/lib/portal/sarah";
@@ -10,7 +11,7 @@ type Receipt = { title: string; reference: string; amount: string; note: string 
 type Tour = { to: "/portal" | "/portal/tickets" | "/portal/tickets/new" | "/portal/shop" | "/portal/orders" | "/portal/billing" | "/portal/complaints" | "/portal/organization" | "/portal/account" | "/portal/my-services" | "/portal/quotes" | "/portal/notifications"; guide: string; label: string; ticketId?: string };
 type Gate = "idle" | "ringing" | "speaking" | "cooldown" | "listening";
 
-const GREETING = "Thank you for calling Manage Tech Service. This is Sarah. How can I help you today?";
+const GREETING = "Thank you for calling Manage Tech Service. This is Mike. How can I help you today?";
 
 function AgentMark({ className = "size-11" }: { className?: string }) {
   return (
@@ -586,7 +587,7 @@ export function SarahWidget() {
       setLines(withReply);
       if (mode === "call" && live.current && result.receipt) void playSarah(text);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sarah couldn't reach the desk.");
+      setError(cause instanceof Error ? cause.message : "Mike couldn't reach the desk.");
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -622,7 +623,7 @@ export function SarahWidget() {
       if (channel === "call" && live.current) await playSarah(result.reply);
       else if (result.show) void playSarah(result.reply, true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sarah couldn't reach the desk.");
+      setError(cause instanceof Error ? cause.message : "Mike couldn't reach the desk.");
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -791,7 +792,7 @@ export function SarahWidget() {
               <button type="button" aria-label="Close chat" onClick={() => setMode("menu")} className="grid size-10 place-items-center rounded-full"><X className="size-5" /></button>
               <span className="grid size-9 place-items-center rounded-full bg-white/15"><AgentMark className="size-6" /></span>
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">Sarah</p>
+                <p className="truncate text-sm font-semibold">Mike</p>
                 <p className="text-xs text-white/80">Manage Tech Service</p>
               </div>
             </header>
@@ -844,7 +845,7 @@ export function SarahWidget() {
             ) : null}
             {error ? <p className="bg-white px-3 pb-1 text-sm text-bad">{error}</p> : null}
             <form className="flex items-center gap-2 bg-[#f0f2f5] px-3 py-2" style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }} onSubmit={(event) => { event.preventDefault(); void turn(draft, "chat"); }}>
-              <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message" aria-label="Message Sarah" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" />
+              <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Message" aria-label="Message Mike" className="h-11 min-w-0 flex-1 rounded-full bg-white px-4 text-sm" />
               <button type="submit" disabled={busy || !draft.trim()} aria-label="Send" className="grid size-11 shrink-0 place-items-center rounded-full bg-[#075e54] text-white disabled:opacity-40"><Send className="size-4" /></button>
             </form>
           </section>
@@ -857,10 +858,10 @@ export function SarahWidget() {
                 <span className={talking || hearing ? "absolute inset-0 animate-ping rounded-full bg-white/10" : "absolute inset-2 rounded-full bg-white/5"} />
                 <span className="relative grid size-24 place-items-center rounded-full bg-[#1c242b]"><AgentMark className="size-14" /></span>
               </div>
-              <h2 className="text-3xl font-semibold">Sarah</h2>
+              <h2 className="text-3xl font-semibold">Mike</h2>
               <p className="text-sm text-white/70">{clock(seconds)}</p>
               <p className="text-sm text-emerald-300">{gate === "ringing" ? "Ringing" : talking ? "Speaking" : hearing ? "Listening" : busy ? "One moment" : muted ? "Muted" : "On the line"}</p>
-              <p className="line-clamp-3 max-w-xs text-sm text-white/80">{gate === "ringing" ? "Calling Sarah" : heard ? heard : lines.at(-1)?.text}</p>
+              <p className="line-clamp-3 max-w-xs text-sm text-white/80">{gate === "ringing" ? "Calling Mike" : heard ? heard : lines.at(-1)?.text}</p>
             </div>
             <div className="grid gap-3 px-4 pt-2" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
               {notice ? <p className="text-center text-sm text-amber-200">{notice}</p> : null}
@@ -888,7 +889,7 @@ export function SarahWidget() {
                 </div>
               ) : null}
               <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); unlockAudio(); void turn(draft, "call"); }}>
-                <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type if you need to" aria-label="Say this to Sarah" className="h-11 min-w-0 flex-1 rounded-full bg-white/10 px-4 text-sm outline-none" />
+                <input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="Type if you need to" aria-label="Say this to Mike" className="h-11 min-w-0 flex-1 rounded-full bg-white/10 px-4 text-sm outline-none" />
                 <button type="submit" disabled={busy || !draft.trim()} aria-label="Send" className="grid size-11 place-items-center rounded-full bg-white/15 disabled:opacity-40"><Send className="size-4" /></button>
               </form>
               <div className="flex items-center justify-center gap-8">
@@ -905,24 +906,24 @@ export function SarahWidget() {
         {open && mode === "menu" ? (
           <section className="grid w-full gap-3 self-end rounded-2xl border border-line bg-surface p-4 shadow-lg md:w-80">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Sarah</p>
+              <p className="text-sm font-semibold">Mike</p>
               <button type="button" aria-label="Close support" onClick={close}><X className="size-4" /></button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => { const hello = [{ from: "sarah" as const, text: "Hi! I'm Sarah with Manage Tech Service. What can I help you with?" }]; linesRef.current = hello; setLines(hello); setMode("chat"); }} className="grid h-20 place-items-center gap-1 rounded-xl border border-line text-sm font-semibold">
+              <button type="button" onClick={() => { const hello = [{ from: "sarah" as const, text: "Hi! I'm Mike with Manage Tech Service. What can I help you with?" }]; linesRef.current = hello; setLines(hello); setMode("chat"); }} className="grid h-20 place-items-center gap-1 rounded-xl border border-line text-sm font-semibold">
                 <Send className="size-5" />
                 Chat
               </button>
-              <button type="button" onClick={() => void startCall()} className="grid h-20 place-items-center gap-1 rounded-xl border border-line text-sm font-semibold">
+              <Link to="/portal/call" className="grid h-20 place-items-center gap-1 rounded-xl border border-line text-sm font-semibold">
                 <Phone className="size-5" />
                 Call
-              </button>
+              </Link>
             </div>
           </section>
         ) : null}
         <button
           type="button"
-          aria-label="Talk to Sarah"
+          aria-label="Talk to Mike"
           aria-expanded={open}
           onPointerDown={(event) => {
             unlockAudio();
@@ -966,7 +967,7 @@ export function SarahWidget() {
       </div>
       {box && tour ? (
         <div className="pointer-events-none fixed z-[80] rounded-2xl ring-4 ring-[#127e86]" style={{ top: box.top, left: box.left, width: box.width, height: box.height }}>
-          <span className="absolute -top-8 left-0 rounded-full bg-[#127e86] px-2 py-1 text-xs font-semibold text-white">Sarah is showing {tour.label}</span>
+          <span className="absolute -top-8 left-0 rounded-full bg-[#127e86] px-2 py-1 text-xs font-semibold text-white">Mike is showing {tour.label}</span>
         </div>
       ) : null}
     </div>
@@ -975,7 +976,7 @@ export function SarahWidget() {
 
 export function SarahHeaderButton() {
   return (
-    <button type="button" className="grid size-10 place-items-center rounded-xl md:hidden" aria-label="Talk to Sarah" onClick={() => window.dispatchEvent(new Event("mts-sarah-toggle"))}>
+    <button type="button" className="grid size-10 place-items-center rounded-xl md:hidden" aria-label="Talk to Mike" onClick={() => window.dispatchEvent(new Event("mts-sarah-toggle"))}>
       <AgentMark className="size-6" />
     </button>
   );

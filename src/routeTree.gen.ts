@@ -30,6 +30,7 @@ import { Route as AuthPopupRouteImport } from './routes/auth/popup'
 import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as PortalAccountRouteImport } from './routes/portal/account'
 import { Route as PortalBillingRouteImport } from './routes/portal/billing'
+import { Route as PortalCallRouteImport } from './routes/portal/call'
 import { Route as PortalCampaignsRouteImport } from './routes/portal/campaigns'
 import { Route as PortalComplaintsRouteImport } from './routes/portal/complaints'
 import { Route as PortalLoginRouteImport } from './routes/portal/login'
@@ -169,6 +170,11 @@ const PortalAccountRoute = PortalAccountRouteImport.update({
 const PortalBillingRoute = PortalBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
+  getParentRoute: () => PortalRoute,
+} as any)
+const PortalCallRoute = PortalCallRouteImport.update({
+  id: '/call',
+  path: '/call',
   getParentRoute: () => PortalRoute,
 } as any)
 const PortalCampaignsRoute = PortalCampaignsRouteImport.update({
@@ -373,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/billing': typeof PortalBillingRoute
+  '/portal/call': typeof PortalCallRoute
   '/portal/campaigns': typeof PortalCampaignsRoute
   '/portal/complaints': typeof PortalComplaintsRoute
   '/portal/login': typeof PortalLoginRoute
@@ -429,6 +436,7 @@ export interface FileRoutesByTo {
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/billing': typeof PortalBillingRoute
+  '/portal/call': typeof PortalCallRoute
   '/portal/campaigns': typeof PortalCampaignsRoute
   '/portal/complaints': typeof PortalComplaintsRoute
   '/portal/login': typeof PortalLoginRoute
@@ -489,6 +497,7 @@ export interface FileRoutesById {
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/billing': typeof PortalBillingRoute
+  '/portal/call': typeof PortalCallRoute
   '/portal/campaigns': typeof PortalCampaignsRoute
   '/portal/complaints': typeof PortalComplaintsRoute
   '/portal/login': typeof PortalLoginRoute
@@ -550,6 +559,7 @@ export interface FileRouteTypes {
     | '/auth/popup'
     | '/portal/account'
     | '/portal/billing'
+    | '/portal/call'
     | '/portal/campaigns'
     | '/portal/complaints'
     | '/portal/login'
@@ -606,6 +616,7 @@ export interface FileRouteTypes {
     | '/auth/popup'
     | '/portal/account'
     | '/portal/billing'
+    | '/portal/call'
     | '/portal/campaigns'
     | '/portal/complaints'
     | '/portal/login'
@@ -665,6 +676,7 @@ export interface FileRouteTypes {
     | '/auth/popup'
     | '/portal/account'
     | '/portal/billing'
+    | '/portal/call'
     | '/portal/campaigns'
     | '/portal/complaints'
     | '/portal/login'
@@ -872,6 +884,13 @@ declare module '@tanstack/react-router' {
       path: '/billing'
       fullPath: '/portal/billing'
       preLoaderRoute: typeof PortalBillingRouteImport
+      parentRoute: typeof PortalRoute
+    }
+    '/portal/call': {
+      id: '/portal/call'
+      path: '/call'
+      fullPath: '/portal/call'
+      preLoaderRoute: typeof PortalCallRouteImport
       parentRoute: typeof PortalRoute
     }
     '/portal/campaigns': {
@@ -1180,6 +1199,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 interface PortalRouteChildren {
   PortalAccountRoute: typeof PortalAccountRoute
   PortalBillingRoute: typeof PortalBillingRoute
+  PortalCallRoute: typeof PortalCallRoute
   PortalCampaignsRoute: typeof PortalCampaignsRoute
   PortalComplaintsRoute: typeof PortalComplaintsRoute
   PortalLoginRoute: typeof PortalLoginRoute
@@ -1203,6 +1223,7 @@ interface PortalRouteChildren {
 const PortalRouteChildren: PortalRouteChildren = {
   PortalAccountRoute: PortalAccountRoute,
   PortalBillingRoute: PortalBillingRoute,
+  PortalCallRoute: PortalCallRoute,
   PortalCampaignsRoute: PortalCampaignsRoute,
   PortalComplaintsRoute: PortalComplaintsRoute,
   PortalLoginRoute: PortalLoginRoute,

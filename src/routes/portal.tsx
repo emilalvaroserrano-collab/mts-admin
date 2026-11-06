@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { createFileRoute, Navigate, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Navigate, Outlet, useRouterState } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { PortalShell } from "@/components/customer-portal";
 import { openPortalFromAuth } from "@/lib/portal/api";
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/portal")({
 });
 
 function PortalLayout() {
+  const path = useRouterState({ select: (state) => state.location.pathname });
   const { user, isPending } = useCurrentUserState();
   const token = useShopToken();
   const link = useQuery({
@@ -24,6 +25,7 @@ function PortalLayout() {
   }, [link.data?.token]);
   if (isPending || (user && (link.isPending || link.data?.token !== token))) return <Boot />;
   if (!user) return <Navigate to="/login" />;
+  if (path === "/portal/call") return <Outlet />;
   return (
     <PortalShell>
       <Outlet />

@@ -463,7 +463,7 @@ export async function handleAgentRequest(request: Request) {
       const text = clip(body.body, 4000);
       if (!text) return json({ error: "Write a reply." }, 400);
       await sql`insert into ticket_comments (ticket_id, author_name, body, public_note) values (${ticketId}, ${name || "Customer"}, ${text}, true)`;
-      const copy = await filePortalTicket(sql, { name, email, organizationId: orgId, subject: `Sarah reply on ticket ${ticketId}`, category: "Chat", body: text });
+      const copy = await filePortalTicket(sql, { name, email, organizationId: orgId, subject: `Mike reply on ticket ${ticketId}`, category: "Chat", body: text });
       return json({ ok: true, ticketId: copy.ticketId, zendeskId: copy.zendeskId });
     }
 
