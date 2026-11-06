@@ -83,6 +83,8 @@ export function SarahWidget() {
   const linesRef = useRef<Line[]>([]);
   const speakGen = useRef(0);
   const pendingRef = useRef("");
+  const heardDraft = useRef("");
+  const heardTimer = useRef(0);
   const actionRef = useRef("");
   const [actionId, setActionId] = useState("");
   const [quote, setQuote] = useState<{ title: string; detail: string; amount: string } | null>(null);
@@ -112,6 +114,10 @@ export function SarahWidget() {
       ear.processor.onaudioprocess = null;
       ear.processor.disconnect();
     }
+    if (ear.recorder && ear.recorder.state !== "inactive") {
+      ear.recorder.onstop = null;
+      try { ear.recorder.stop(); } catch { /* already stopped */ }
+    }
     ear.mute?.disconnect();
     ear.source.disconnect();
     ear.stream.getTracks().forEach((track) => track.stop());
@@ -127,6 +133,8 @@ export function SarahWidget() {
     ear.closing = true;
     ear.speaking = false;
     ear.playback = false;
+    window.clearTimeout(heardTimer.current);
+    heardDraft.current = "";
     ear.stream.getAudioTracks().forEach((track) => { track.enabled = false; });
     if (gateRef.current === "listening") setPhase("idle");
   }
@@ -250,6 +258,7 @@ export function SarahWidget() {
       return;
     }
     if (pendingRef.current) return;
+    pauseListen();
     const ear = earRef.current;
     if (ear) ear.playback = true;
     try {
@@ -263,6 +272,42 @@ export function SarahWidget() {
       return;
     }
     setPhase("listening");
+    listen();
+  }
+
+  function pauseListen() {
+    window.clearTimeout(heardTimer.current);
+    heardDraft.current = "";
+    const rec = recRef.current;
+    recRef.current = null;
+    try { rec?.abort(); } catch { try { rec?.stop(); } catch { /* already closed */ } }
+  }
+
+  function commitHeard(text: string) {
+    const said = text.trim();
+    heardDraft.current = "";
+    window.clearTimeout(heardTimer.current);
+    if (!said || !live.current || mutedRef.current || gateRef.current === "speaking") return;
+    if (isEcho(said, spokenRef.current)) return;
+    setHeard(said);
+    if (busyRef.current) {
+      pendingRef.current = said;
+      return;
+    }
+    void turn(said, "call");
+  }
+
+  function holdHeard(text: string) {
+    const said = text.trim();
+    if (!said || gateRef.current === "speaking") return;
+    heardDraft.current = said;
+    setHeard(said);
+    window.clearTimeout(heardTimer.current);
+    heardTimer.current = window.setTimeout(() => {
+      const next = heardDraft.current;
+      heardDraft.current = "";
+      if (next) commitHeard(next);
+    }, 650);
   }
 
   function listen() {
@@ -281,28 +326,18 @@ export function SarahWidget() {
     recRef.current = rec;
     if (gateRef.current !== "speaking") setPhase("listening");
     rec.onresult = (event) => {
-      if (!live.current || mutedRef.current) return;
+      if (!live.current || mutedRef.current || gateRef.current === "speaking") return;
       let finalText = "";
       let interim = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+      for (let index = 0; index < event.results.length; index += 1) {
         const piece = event.results[index]?.[0]?.transcript || "";
         if (event.results[index]?.isFinal) finalText += piece;
         else interim += piece;
       }
-      if (interim.trim()) setHeard(interim.trim());
-      const said = finalText.trim();
-      if (!said || isEcho(said, spokenRef.current)) return;
-      setHeard(said);
-      if (gateRef.current === "speaking") {
-        speakGen.current += 1;
-        stopSpeaker();
-        setPhase("listening");
-      }
-      if (busyRef.current) {
-        pendingRef.current = said;
-        return;
-      }
-      void turn(said, "call");
+      const said = `${finalText} ${interim}`.replace(/\s+/g, " ").trim();
+      if (!said) return;
+      if (finalText.trim() && !interim.trim()) commitHeard(finalText);
+      else holdHeard(said);
     };
     rec.onerror = (event) => {
       if (!live.current) return;
@@ -317,9 +352,10 @@ export function SarahWidget() {
       }
     };
     rec.onend = () => {
-      if (recRef.current !== rec) return;
-      recRef.current = null;
-      if (live.current && !mutedRef.current && gateRef.current !== "ringing") window.setTimeout(() => listen(), 60);
+      const leftover = heardDraft.current;
+      if (recRef.current === rec) recRef.current = null;
+      if (leftover && gateRef.current !== "speaking") commitHeard(leftover);
+      if (live.current && !mutedRef.current && gateRef.current === "listening") window.setTimeout(() => listen(), 60);
     };
     try { rec.start(); } catch {
       recRef.current = null;
@@ -380,6 +416,14 @@ export function SarahWidget() {
           const back = Math.min(earNow.filled, Math.floor(earNow.ctx.sampleRate * 0.25));
           earNow.startAt = (earNow.write - back + ring.length) % ring.length;
           earNow.spoken = back / earNow.ctx.sampleRate;
+          if (!earNow.recorder || earNow.recorder.state === "inactive") {
+            const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+            const rec = mime ? new MediaRecorder(earNow.stream, { mimeType: mime }) : new MediaRecorder(earNow.stream);
+            earNow.chunks = [];
+            earNow.recorder = rec;
+            rec.ondataavailable = (item) => { if (item.data.size) earNow.chunks.push(item.data); };
+            rec.start();
+          }
           if (playing || gateRef.current === "speaking") {
             speakGen.current += 1;
             earNow.playback = false;
@@ -402,28 +446,40 @@ export function SarahWidget() {
   }
 
   async function finishUtterance(ear: Ear) {
-    const samples = takeRing(ear);
+    const rec = ear.recorder;
     ear.speaking = false;
     ear.hot = 0;
     ear.cool = 0;
-    const seconds = samples.length / ear.ctx.sampleRate;
-    if (!live.current || seconds < 0.28) {
+    const blob = await new Promise<Blob>((resolve) => {
+      if (!rec || rec.state === "inactive") {
+        resolve(new Blob(ear.chunks, { type: rec?.mimeType || "audio/webm" }));
+        return;
+      }
+      rec.onstop = () => resolve(new Blob(ear.chunks, { type: rec.mimeType || "audio/webm" }));
+      try { rec.stop(); } catch { resolve(new Blob(ear.chunks, { type: rec.mimeType || "audio/webm" })); }
+    });
+    ear.recorder = null;
+    ear.chunks = [];
+    if (!live.current || blob.size < 800) {
       ear.closing = false;
+      if (live.current && !mutedRef.current) listen();
       return;
     }
     setHeard("");
     let text = "";
     try {
-      const wav = encodeWav(downsample(samples, ear.ctx.sampleRate, 16000), 16000);
-      const audio = await blobToBase64(wav);
-      const heard = await hearSarah({ data: { audio, mime: "audio/wav" } });
+      const audio = await blobToBase64(blob);
+      const heard = await hearSarah({ data: { audio, mime: blob.type || "audio/webm" } });
       text = heard.text.trim();
     } catch {
       text = "";
     }
     ear.closing = false;
     if (!live.current || mutedRef.current) return;
-    if (!text || isEcho(text, spokenRef.current)) return;
+    if (!text || isEcho(text, spokenRef.current)) {
+      listen();
+      return;
+    }
     setHeard(text);
     if (busyRef.current) {
       pendingRef.current = text;
@@ -664,16 +720,36 @@ export function SarahWidget() {
       setBox(null);
       return;
     }
-    const timer = window.setTimeout(() => {
-      const heading = document.querySelector("main h1, main h2") as HTMLElement | null;
-      const marked = document.querySelector(`[data-guide="${tour.guide}"]`) as HTMLElement | null;
-      const target = heading || marked;
+    let scrolled = false;
+    const measure = () => {
+      const nodes = [...document.querySelectorAll(`[data-guide="${tour.guide}"]`)] as HTMLElement[];
+      const marked = nodes.find((node) => {
+        const rect = node.getBoundingClientRect();
+        const style = window.getComputedStyle(node);
+        return rect.width > 8 && rect.height > 8 && style.display !== "none" && style.visibility !== "hidden";
+      });
+      const target = marked || (document.querySelector("main h1") as HTMLElement | null);
       if (!target) return;
-      target.scrollIntoView({ block: "center", behavior: "smooth" });
+      if (!scrolled) {
+        target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        scrolled = true;
+      }
       const rect = target.getBoundingClientRect();
-      setBox({ top: Math.max(8, rect.top - 6), left: Math.max(8, rect.left - 6), width: rect.width + 12, height: rect.height + 12 });
-    }, 400);
-    return () => window.clearTimeout(timer);
+      setBox({
+        top: Math.max(8, rect.top - 6),
+        left: Math.max(8, rect.left - 6),
+        width: Math.min(rect.width + 12, window.innerWidth - 16),
+        height: rect.height + 12,
+      });
+    };
+    const timers = [250, 700, 1400].map((ms) => window.setTimeout(measure, ms));
+    window.addEventListener("scroll", measure, true);
+    window.addEventListener("resize", measure);
+    return () => {
+      timers.forEach((id) => window.clearTimeout(id));
+      window.removeEventListener("scroll", measure, true);
+      window.removeEventListener("resize", measure);
+    };
   }, [tour]);
 
   useEffect(() => {
@@ -699,12 +775,13 @@ export function SarahWidget() {
   const talking = gate === "speaking" || gate === "cooldown";
   const hearing = gate === "listening";
   const full = open && mode !== "menu" && !tour;
-  const place = wide && spot ? { right: spot.right, bottom: spot.bottom } : undefined;
+  const touring = Boolean(tour) && !wide;
+  const place = wide && spot && !tour ? { right: spot.right, bottom: spot.bottom } : undefined;
 
   return (
     <div
-      className={full ? "fixed inset-0 z-50 flex md:inset-auto md:right-4 md:bottom-4 md:w-[24rem]" : open ? "fixed inset-x-0 bottom-0 z-50 flex justify-end md:inset-x-auto md:right-4 md:bottom-4 md:w-[24rem]" : "fixed z-50 hidden md:right-4 md:bottom-4 md:flex"}
-      style={full && !wide ? undefined : { ...place, paddingBottom: place ? undefined : "max(0.75rem, env(safe-area-inset-bottom))" }}
+      className={touring ? "fixed inset-x-0 top-0 z-50 flex" : full ? "fixed inset-0 z-50 flex md:inset-auto md:right-4 md:bottom-4 md:w-[24rem]" : open ? "fixed inset-x-0 bottom-0 z-50 flex justify-end md:inset-x-auto md:right-4 md:bottom-4 md:w-[24rem]" : "fixed z-50 hidden md:right-4 md:bottom-4 md:flex"}
+      style={touring ? { paddingTop: "env(safe-area-inset-top)" } : full && !wide ? undefined : { ...place, paddingBottom: place ? undefined : "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
       <div className={open && mode !== "menu" && !tour ? "flex h-full w-full flex-col" : "flex w-full flex-col items-stretch gap-2 px-3 md:w-[24rem] md:items-end md:px-0"}>
         <audio ref={dockAudio} playsInline preload="auto" className="hidden" />
@@ -888,7 +965,7 @@ export function SarahWidget() {
         </button>
       </div>
       {box && tour ? (
-        <div className="pointer-events-none fixed z-30 rounded-2xl ring-4 ring-[#127e86]" style={{ top: box.top, left: box.left, width: box.width, height: box.height }}>
+        <div className="pointer-events-none fixed z-[80] rounded-2xl ring-4 ring-[#127e86]" style={{ top: box.top, left: box.left, width: box.width, height: box.height }}>
           <span className="absolute -top-8 left-0 rounded-full bg-[#127e86] px-2 py-1 text-xs font-semibold text-white">Sarah is showing {tour.label}</span>
         </div>
       ) : null}
@@ -921,6 +998,8 @@ type Ear = {
   spoken: number;
   closing: boolean;
   playback: boolean;
+  recorder: MediaRecorder | null;
+  chunks: Blob[];
 };
 
 async function openEar() {
@@ -968,6 +1047,8 @@ async function openEar() {
     spoken: 0,
     closing: false,
     playback: false,
+    recorder: null,
+    chunks: [],
   };
 }
 

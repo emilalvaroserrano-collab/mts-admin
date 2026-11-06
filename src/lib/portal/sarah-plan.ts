@@ -63,7 +63,7 @@ export function planUtterance(text: string): Planned {
   if (/\b(my tickets|open tickets|ticket status|any tickets)\b/.test(q)) return { tool: "list_tickets" };
   if (/\b(my orders|order status|where.*order|shipment|tracking)\b/.test(q)) return { tool: "list_orders" };
   if (/\b(my requests|my services|quote status)\b/.test(q)) return { tool: "list_requests" };
-  if (/\b(take me to|go to|bring me to|bring up the|open the)\b/.test(q)) {
+  if (/\b(take me to|go to|bring me to|bring up|pull up|where is|where's|show me the|open the)\b/.test(q) || (/\bopen\b/.test(q) && /\b(page|tab)\b/.test(q))) {
     const page = matchPage(q);
     if (page) return { tool: "show", page: page.id };
   }

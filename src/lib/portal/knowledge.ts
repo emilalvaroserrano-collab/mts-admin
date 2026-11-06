@@ -16,9 +16,9 @@ export const PAGES: SarahPage[] = [
   { id: "complaints", to: "/portal/complaints", guide: "complaints", label: "Complaints", words: ["complaint", "complaints", "feedback"] },
   { id: "organization", to: "/portal/organization", guide: "organization", label: "Organization", words: ["organization", "company"] },
   { id: "account", to: "/portal/account", guide: "account", label: "Account", words: ["account", "profile", "phone number"] },
-  { id: "services", to: "/portal/my-services", guide: "home", label: "My services", words: ["my services", "active service", "provision"] },
-  { id: "quotes", to: "/portal/quotes", guide: "home", label: "Quotes", words: ["quote", "quotes"] },
-  { id: "notifications", to: "/portal/notifications", guide: "home", label: "Notifications", words: ["notification", "notifications", "alert"] },
+  { id: "services", to: "/portal/my-services", guide: "services", label: "My services", words: ["my services", "active service", "provision"] },
+  { id: "quotes", to: "/portal/quotes", guide: "quotes", label: "Quotes", words: ["quote", "quotes"] },
+  { id: "notifications", to: "/portal/notifications", guide: "notifications", label: "Notifications", words: ["notification", "notifications", "alert"] },
 ];
 
 const ARTICLES: { title: string; keywords: string[]; body: string; page: string }[] = [

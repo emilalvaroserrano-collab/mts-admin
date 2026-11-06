@@ -65,7 +65,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
               <ClipboardList className="size-5" />
               {count > 0 ? <span className="absolute top-1 right-1 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] font-semibold leading-4 text-white">{count}</span> : null}
             </Link>
-            <Link to="/portal/notifications" className="hidden size-11 place-items-center rounded-xl md:grid" aria-label="Notifications"><Bell className="size-5" /></Link>
+            <Link to="/portal/notifications" data-guide="notifications" className="hidden size-11 place-items-center rounded-xl md:grid" aria-label="Notifications"><Bell className="size-5" /></Link>
             <SarahHeaderButton />
             {home.data?.destination === "admin" ? <a href="/" className="hidden px-2 text-xs font-semibold text-accent md:inline">Admin</a> : null}
             <button type="button" className="grid size-10 place-items-center rounded-xl md:hidden" aria-label="Open menu" onClick={() => setMenu(true)}>

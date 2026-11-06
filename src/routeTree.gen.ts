@@ -25,6 +25,7 @@ import { Route as AppRolesRouteImport } from './routes/_app/roles'
 import { Route as AppServicesRouteImport } from './routes/_app/services'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
+import { Route as ApiOpenapiDotjsonRouteImport } from './routes/api/openapi[.]json'
 import { Route as AuthPopupRouteImport } from './routes/auth/popup'
 import { Route as PortalIndexRouteImport } from './routes/portal/index'
 import { Route as PortalAccountRouteImport } from './routes/portal/account'
@@ -47,6 +48,7 @@ import { Route as AppOrganizationsIndexRouteImport } from './routes/_app/organiz
 import { Route as AppOrganizationsOrgIdRouteImport } from './routes/_app/organizations/$orgId'
 import { Route as AppTicketsIndexRouteImport } from './routes/_app/tickets/index'
 import { Route as AppTicketsTicketIdRouteImport } from './routes/_app/tickets/$ticketId'
+import { Route as ApiAgentSplatRouteImport } from './routes/api/agent/$'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiJobsRunRouteImport } from './routes/api/jobs/run'
 import { Route as ApiPaymentsAlternativeRouteImport } from './routes/api/payments/alternative'
@@ -143,6 +145,11 @@ const AppUsersRoute = AppUsersRouteImport.update({
   id: '/users',
   path: '/users',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiOpenapiDotjsonRoute = ApiOpenapiDotjsonRouteImport.update({
+  id: '/api/openapi.json',
+  path: '/api/openapi.json',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthPopupRoute = AuthPopupRouteImport.update({
   id: '/auth/popup',
@@ -255,6 +262,11 @@ const AppTicketsTicketIdRoute = AppTicketsTicketIdRouteImport.update({
   path: '/tickets/$ticketId',
   getParentRoute: () => AppRoute,
 } as any)
+const ApiAgentSplatRoute = ApiAgentSplatRouteImport.update({
+  id: '/api/agent/$',
+  path: '/api/agent/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -357,6 +369,7 @@ export interface FileRoutesByFullPath {
   '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
+  '/api/openapi.json': typeof ApiOpenapiDotjsonRoute
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/billing': typeof PortalBillingRoute
@@ -375,6 +388,7 @@ export interface FileRoutesByFullPath {
   '/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
+  '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/jobs/run': typeof ApiJobsRunRoute
   '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
@@ -411,6 +425,7 @@ export interface FileRoutesByTo {
   '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
+  '/api/openapi.json': typeof ApiOpenapiDotjsonRoute
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/billing': typeof PortalBillingRoute
@@ -430,6 +445,7 @@ export interface FileRoutesByTo {
   '/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/tickets/$ticketId': typeof AppTicketsTicketIdRoute
+  '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/jobs/run': typeof ApiJobsRunRoute
   '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
@@ -469,6 +485,7 @@ export interface FileRoutesById {
   '/_app/services': typeof AppServicesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/users': typeof AppUsersRoute
+  '/api/openapi.json': typeof ApiOpenapiDotjsonRoute
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
   '/portal/billing': typeof PortalBillingRoute
@@ -488,6 +505,7 @@ export interface FileRoutesById {
   '/_app/orders/$orderId': typeof AppOrdersOrderIdRoute
   '/_app/organizations/$orgId': typeof AppOrganizationsOrgIdRoute
   '/_app/tickets/$ticketId': typeof AppTicketsTicketIdRoute
+  '/api/agent/$': typeof ApiAgentSplatRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/jobs/run': typeof ApiJobsRunRoute
   '/api/payments/alternative': typeof ApiPaymentsAlternativeRoute
@@ -528,6 +546,7 @@ export interface FileRouteTypes {
     | '/services'
     | '/settings'
     | '/users'
+    | '/api/openapi.json'
     | '/auth/popup'
     | '/portal/account'
     | '/portal/billing'
@@ -546,6 +565,7 @@ export interface FileRouteTypes {
     | '/orders/$orderId'
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
+    | '/api/agent/$'
     | '/api/auth/$'
     | '/api/jobs/run'
     | '/api/payments/alternative'
@@ -582,6 +602,7 @@ export interface FileRouteTypes {
     | '/services'
     | '/settings'
     | '/users'
+    | '/api/openapi.json'
     | '/auth/popup'
     | '/portal/account'
     | '/portal/billing'
@@ -601,6 +622,7 @@ export interface FileRouteTypes {
     | '/orders/$orderId'
     | '/organizations/$orgId'
     | '/tickets/$ticketId'
+    | '/api/agent/$'
     | '/api/auth/$'
     | '/api/jobs/run'
     | '/api/payments/alternative'
@@ -639,6 +661,7 @@ export interface FileRouteTypes {
     | '/_app/services'
     | '/_app/settings'
     | '/_app/users'
+    | '/api/openapi.json'
     | '/auth/popup'
     | '/portal/account'
     | '/portal/billing'
@@ -658,6 +681,7 @@ export interface FileRouteTypes {
     | '/_app/orders/$orderId'
     | '/_app/organizations/$orgId'
     | '/_app/tickets/$ticketId'
+    | '/api/agent/$'
     | '/api/auth/$'
     | '/api/jobs/run'
     | '/api/payments/alternative'
@@ -686,7 +710,9 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRouteWithChildren
+  ApiOpenapiDotjsonRoute: typeof ApiOpenapiDotjsonRoute
   AuthPopupRoute: typeof AuthPopupRoute
+  ApiAgentSplatRoute: typeof ApiAgentSplatRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiJobsRunRoute: typeof ApiJobsRunRoute
   ApiPaymentsAlternativeRoute: typeof ApiPaymentsAlternativeRoute
@@ -812,6 +838,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/users'
       preLoaderRoute: typeof AppUsersRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/openapi.json': {
+      id: '/api/openapi.json'
+      path: '/api/openapi.json'
+      fullPath: '/api/openapi.json'
+      preLoaderRoute: typeof ApiOpenapiDotjsonRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/popup': {
       id: '/auth/popup'
@@ -966,6 +999,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/tickets/$ticketId'
       preLoaderRoute: typeof AppTicketsTicketIdRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/agent/$': {
+      id: '/api/agent/$'
+      path: '/api/agent/$'
+      fullPath: '/api/agent/$'
+      preLoaderRoute: typeof ApiAgentSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
       id: '/api/auth/$'
@@ -1191,7 +1231,9 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRouteWithChildren,
+  ApiOpenapiDotjsonRoute: ApiOpenapiDotjsonRoute,
   AuthPopupRoute: AuthPopupRoute,
+  ApiAgentSplatRoute: ApiAgentSplatRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiJobsRunRoute: ApiJobsRunRoute,
   ApiPaymentsAlternativeRoute: ApiPaymentsAlternativeRoute,

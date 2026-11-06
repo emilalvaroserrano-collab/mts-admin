@@ -442,7 +442,16 @@ const TOOLS = [
 type ChatMessage = { role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; tool_calls?: unknown };
 
 function sarahSystem(channel: "chat" | "call", profile: string) {
-  return `You are Sarah, the phone and chat agent for Manage Tech Service. Channel: ${channel}. Only this account: ${profile}. Reply in one short sentence, then stop. Talk like a normal person at a help desk. No sighs, no breaths, no laughs, no hmm, no mm-hmm, and no speech tags. Use a tool before you claim a ticket, order, or change. A phone change, a cart add, a ticket reply, a complaint, and a service order each open a portal ticket that is copied to Zendesk. Reading an account, listing records, or opening a page does not. Never invent ticket numbers, prices, or shipment dates. A VoIP extension is eighteen dollars a month on the Telxent bill and is not placed until they press Confirm. Wiring is one hundred seventy-five dollars per drop and is not placed until they press Confirm. Desk phone is 818-758-4073. You cannot change roles or take a card number. The page map and catalog live in knowledge.md.`;
+  return `You are Sarah, the phone and chat agent for Manage Tech Service. Channel: ${channel}. Only this account: ${profile}. Reply in one short sentence, then stop. Talk like a normal person at a help desk. No sighs, no breaths, no laughs, no hmm, no mm-hmm, and no speech tags. Use a tool before you claim a ticket, order, price, date, or change. If you did not call a tool, do not invent an account fact. Say you need to check, or ask one question. Never say you already submitted, shipped, scheduled, called, or fixed something. Never invent ticket numbers, order numbers, prices, or shipment dates. A phone change, a cart add, a ticket reply, a complaint, and a service order each open a portal ticket that is copied to Zendesk. Reading an account, listing records, or opening a page does not. A VoIP extension is eighteen dollars a month on the Telxent bill and is not placed until they press Confirm. Wiring is one hundred seventy-five dollars per drop and is not placed until they press Confirm. Desk phone is 818-758-4073. You cannot change roles or take a card number. The page map and catalog live in knowledge.md.`;
+}
+
+function groundReply(reply: string, fromTool: boolean) {
+  if (fromTool) return reply;
+  const invented = /\b(ticket|order|case|reference)\s*(number|#|id)?\s*:?\s*\d{2,}\b/i.test(reply)
+    || /\b(i (already |just )?(submitted|opened|placed|charged|shipped|scheduled|called|emailed|fixed|updated)|on the way|tracking number|technician is)\b/i.test(reply)
+    || /\$\s?(?!18\b|175\b)\d/.test(reply);
+  if (invented) return "I don't have that on your account. I can check your tickets or orders, or open a request.";
+  return reply;
 }
 async function askGrok(token: string, channel: "chat" | "call", history: { role: "user" | "assistant"; content: string }[], profile: string) {
   const apiKey = process.env.XAI_API_KEY;
@@ -459,14 +468,17 @@ async function askGrok(token: string, channel: "chat" | "call", history: { role:
     const res = await fetch("https://api.x.ai/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: "grok-4-1-fast-non-reasoning", messages, tools: TOOLS, tool_choice: "auto", max_tokens: 70, temperature: 0.2 }),
+      body: JSON.stringify({ model: "grok-4-1-fast-non-reasoning", messages, tools: TOOLS, tool_choice: "auto", max_tokens: 70, temperature: 0 }),
     });
     if (!res.ok) return last ? { reply: last, cartSku: cartSku || undefined, pending, show } : null;
     const body = (await res.json()) as { choices?: { message?: ChatMessage & { tool_calls?: { id: string; function?: { name?: string; arguments?: string | Record<string, unknown> }; name?: string; arguments?: string | Record<string, unknown> }[] } }[] };
     const message = body.choices?.[0]?.message;
     if (!message) return last ? { reply: last, cartSku: cartSku || undefined, pending, show } : null;
     const calls = message.tool_calls ?? [];
-    if (!calls.length) return { reply: message.content || last || "How else can I help?", cartSku: cartSku || undefined, pending, show };
+    if (!calls.length) {
+      const spoken = last || message.content || "How else can I help?";
+      return { reply: groundReply(spoken, Boolean(last)), cartSku: cartSku || undefined, pending, show };
+    }
     messages.push(message);
     for (const call of calls) {
       const name = call.function?.name || call.name || "";
@@ -753,7 +765,19 @@ export const hearSarah = createServerFn({ method: "POST" })
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
     });
-    if (!res.ok) return { text: "" };
+    if (!res.ok) {
+      const plain = new FormData();
+      plain.append("model", "grok-voice-transcribe-2.0");
+      plain.append("file", new File([new Uint8Array(bytes)], `turn.${ext}`, { type: data.mime }));
+      const retry = await fetch("https://api.x.ai/v1/stt", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: plain,
+      });
+      if (!retry.ok) return { text: "" };
+      const retryBody = (await retry.json()) as { text?: string; transcript?: string };
+      return { text: String(retryBody.text || retryBody.transcript || "").trim() };
+    }
     const body = (await res.json()) as { text?: string; transcript?: string };
     return { text: String(body.text || body.transcript || "").trim() };
   });
