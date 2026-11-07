@@ -118,7 +118,7 @@ async function runTool(token: string, planned: Planned, approved = false): Promi
     const tickets = await sql<Row>`select id, zendesk_id from tickets where id = ${planned.id} and lower(requester_email) = lower(${email})`;
     if (!tickets[0]) return { summary: "I can't find that ticket on this account." };
     await sql`insert into ticket_comments (ticket_id, author_name, body, public_note) values (${planned.id}, ${name || "Customer"}, ${planned.body}, true)`;
-    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Mike reply on ticket ${planned.id}`, category: "Chat", body: planned.body });
+    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Sarah reply on ticket ${planned.id}`, category: "Chat", body: planned.body });
     return { summary: `I added your note to ticket ${planned.id}.${copy}` };
   }
   if (planned.tool === "complaint") {
@@ -132,7 +132,7 @@ async function runTool(token: string, planned: Planned, approved = false): Promi
   if (planned.tool === "update_contact") {
     if (!approved) return { summary: `${firstName(name)}, I can change the phone on this account to ${planned.phone}. Press Confirm if that number is right.`, needsConfirm: planned };
     await sql`update shop_customers set phone = ${planned.phone} where id = ${id}`;
-    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Mike updated phone to ${planned.phone}`, category: "Account", body: `Mike changed the portal phone number to ${planned.phone}.` });
+    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Sarah updated phone to ${planned.phone}`, category: "Account", body: `Sarah changed the portal phone number to ${planned.phone}.` });
     return { summary: `${firstName(name)}, I updated the phone number on your account to ${planned.phone}.${copy}` };
   }
   if (planned.tool === "find_equipment") {
@@ -149,7 +149,7 @@ async function runTool(token: string, planned: Planned, approved = false): Promi
     const cards = rows.map((item) => ({ title: s(item, "name"), detail: `${s(item, "sku")} · $${(n(item, "price_cents") / 100).toFixed(2)}` }));
     if (!planned.add) return { summary: `I found ${cards.length === 1 ? cards[0].title : `${cards.length} matches`}. Say add to cart if you want one.`, cards };
     const match = rows[0];
-    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Mike placed ${s(match, "sku")} in the cart`, category: "Ordering", body: `Mike placed ${s(match, "name")} (${s(match, "sku")}) in the cart after the customer asked. Checkout is still the customer's step.` });
+    const copy = await deskCopy(sql, { name, email, organizationId: orgId, subject: `Sarah placed ${s(match, "sku")} in the cart`, category: "Ordering", body: `Sarah placed ${s(match, "name")} (${s(match, "sku")}) in the cart after the customer asked. Checkout is still the customer's step.` });
     return { summary: `I put ${s(match, "name")} in your cart.${copy}`, cartSku: s(match, "sku"), cards };
   }
   if (planned.tool === "order_service") {
@@ -442,7 +442,7 @@ const TOOLS = [
 type ChatMessage = { role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; tool_calls?: unknown };
 
 function sarahSystem(channel: "chat" | "call", profile: string) {
-  return `You are Mike, the phone and chat agent for Manage Tech Service. Channel: ${channel}. Only this account: ${profile}. Reply in one short sentence, then stop. Talk like a normal person at a help desk. No sighs, no breaths, no laughs, no hmm, no mm-hmm, and no speech tags. Use a tool before you claim a ticket, order, price, date, or change. If you did not call a tool, do not invent an account fact. Say you need to check, or ask one question. Never say you already submitted, shipped, scheduled, called, or fixed something. Never invent ticket numbers, order numbers, prices, or shipment dates. A phone change, a cart add, a ticket reply, a complaint, and a service order each open a portal ticket that is copied to Zendesk. Reading an account, listing records, or opening a page does not. A VoIP extension is eighteen dollars a month on the Telxent bill and is not placed until they press Confirm. Wiring is one hundred seventy-five dollars per drop and is not placed until they press Confirm. Desk phone is 818-758-4073. You cannot change roles or take a card number. The page map and catalog live in knowledge.md. If they ask your name, say Mike.`;
+  return `You are Sarah, the phone and chat agent for Manage Tech Service. Channel: ${channel}. Only this account: ${profile}. Reply in one short sentence, then stop. Talk like a normal person at a help desk. Use natural everyday speech, brief acknowledgments, and context-appropriate warmth. Do not read stage directions or force laughter. Use a tool before you claim a ticket, order, price, date, or change. If you did not call a tool, do not invent an account fact. Say you need to check, or ask one question. Never say you already submitted, shipped, scheduled, called, or fixed something. Never invent ticket numbers, order numbers, prices, or shipment dates. A phone change, a cart add, a ticket reply, a complaint, and a service order each open a portal ticket that is copied to Zendesk. Reading an account, listing records, or opening a page does not. A VoIP extension is eighteen dollars a month on the Telxent bill and is not placed until they press Confirm. Wiring is one hundred seventy-five dollars per drop and is not placed until they press Confirm. Desk phone is 818-758-4073. You cannot change roles or take a card number. The page map and catalog live in knowledge.md. If they ask your name, say Sarah.`;
 }
 
 function groundReply(reply: string, fromTool: boolean) {
@@ -689,9 +689,9 @@ export const getSarahStatus = createServerFn({ method: "POST" })
         order by updated_at desc limit 1
       `;
       const status = s(rows[0], "status");
-      if (status === "awaiting_confirmation") return { banner: "Mike is waiting on a yes before he sends that." };
-      if (status === "manual_review") return { banner: "Mike could not confirm the last request. The desk is checking it." };
-      if (status === "checking_status" || status === "executing") return { banner: "Mike is still checking whether that last request went through." };
+      if (status === "awaiting_confirmation") return { banner: "Sarah is waiting on a yes before he sends that." };
+      if (status === "manual_review") return { banner: "Sarah could not confirm the last request. The desk is checking it." };
+      if (status === "checking_status" || status === "executing") return { banner: "Sarah is still checking whether that last request went through." };
       return { banner: "" };
     } catch {
       return { banner: "" };

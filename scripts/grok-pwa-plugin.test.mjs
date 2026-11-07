@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import {
   appNameFromHost,
-  createHeadInjector,
+  createHeadInjector as createFixtureHeadInjector,
   grokXCreatorHeadTags,
-  injectGrokPwaHead,
+  injectGrokPwaHead as injectFixturePwaHead,
   isDocumentPath,
   isInstallQuery,
   publicAppHost,
@@ -20,6 +20,10 @@ import {
 import { renderInstallPage } from "./grok-pwa-plugin.mjs";
 
 const TEMPLATE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Template tests must not inherit the real application's MTS branding/card files.
+const FIXTURE_ROOT = mkdtempSync(join(tmpdir(), "grok-pwa-unit-"));
+const injectGrokPwaHead = (html, ctx = {}) => injectFixturePwaHead(html, { cwd: FIXTURE_ROOT, ...ctx });
+const createHeadInjector = (ctx = {}) => createFixtureHeadInjector({ cwd: FIXTURE_ROOT, ...ctx });
 
 test("injects before </head>", () => {
   const out = injectGrokPwaHead("<html><head><title>x</title></head><body></body></html>");

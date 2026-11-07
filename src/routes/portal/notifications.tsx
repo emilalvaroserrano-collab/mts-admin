@@ -14,6 +14,8 @@ function NoticesPage() {
     queryKey: ["customer-notices", token],
     queryFn: () => listCustomerNotices({ data: token }),
     enabled: Boolean(token),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
   const mark = useMutation({
     mutationFn: (id: number) => markCustomerNotice({ data: { token, id } }),

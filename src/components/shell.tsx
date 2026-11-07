@@ -48,6 +48,7 @@ const NAV = [
   { to: "/roles", label: "Roles", icon: Shield, group: "Setup" },
   { to: "/integrations", label: "Zendesk", icon: Cable, group: "Setup" },
   { to: "/settings", label: "Settings", icon: Settings, group: "Setup" },
+  { to: "/csr", label: "Sarah workspace", icon: BookOpen, group: "Setup" },
   { to: "/docs", label: "Docs", icon: BookOpen, group: "Setup" },
 ] as const;
 

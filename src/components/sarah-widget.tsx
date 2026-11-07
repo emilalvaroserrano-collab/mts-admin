@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Phone, PhoneOff, Send, X } from "lucide-react";
 import { issueAgentHandoff } from "@/lib/portal/api";
 import { useShopToken } from "@/lib/portal/shop-session";
@@ -75,6 +76,13 @@ function AudioBars({ levels, wide = false }: { levels: number[]; wide?: boolean 
 }
 
 export function SarahWidget() {
+  const navigate = useNavigate();
+  const currentPath = useRouterState({ select: state => state.location.pathname });
+  const pathRef = useRef(currentPath);
+  useEffect(() => {
+    pathRef.current = currentPath;
+    frame.current?.contentWindow?.postMessage({ type: "mts-page", path: currentPath }, AGENT_ORIGIN);
+  }, [currentPath]);
   const token = useShopToken();
   const levels = useVoiceLevels();
   const [open, setOpen] = useState(false);
@@ -143,11 +151,17 @@ export function SarahWidget() {
       if (!current || !target) return;
       try {
         const issued = await issueAgentHandoff({ data: current });
-        target.postMessage({ type: "mts-user", code: issued.code }, AGENT_ORIGIN);
+        target.postMessage({ type: "mts-user", code: issued.code, page: pathRef.current }, AGENT_ORIGIN);
       } catch { /* the agent stays a guest until the next ready ping */ }
     }
     function onMessage(event: MessageEvent) {
-      if (event.origin !== AGENT_ORIGIN) return;
+      if (event.origin !== AGENT_ORIGIN || event.source !== frame.current?.contentWindow) return;
+      if (event.data?.type === "mts-navigate") {
+        const path=event.data.path;
+        if(typeof path!=="string"||!new Set(["/portal","/portal/shop","/portal/tickets","/portal/orders","/portal/billing","/portal/account","/portal/organization","/portal/notifications","/portal/my-services"]).has(path))return;
+        void navigate({to:path as "/portal"}).then(()=>frame.current?.contentWindow?.postMessage({type:"mts-navigated",path},AGENT_ORIGIN));
+        return;
+      }
       if (event.data?.type === "mts-agent-ready") {
         void publish();
         return;
@@ -158,7 +172,7 @@ export function SarahWidget() {
     }
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, []);
+  }, [navigate]);
 
   function openAgent() {
     setSessionLive(true);

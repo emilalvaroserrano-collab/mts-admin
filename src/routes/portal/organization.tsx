@@ -20,7 +20,7 @@ function OrganizationPage() {
   const save = useMutation({
     mutationFn: () => savePortalCompany({ data: { token, business, phone, city } }),
     onSuccess: () => {
-      setNotice("Saved. A ticket was opened so the desk can review the change.");
+      setNotice("Submitted for review. Your company details change after the account team approves the request.");
       void client.invalidateQueries({ queryKey: ["portal-session", token] });
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "Could not save."),
@@ -33,7 +33,7 @@ function OrganizationPage() {
       <input value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone" aria-label="Phone" className="h-11 rounded-xl border border-line bg-surface px-3" />
       <input value={city} onChange={(event) => setCity(event.target.value)} placeholder="City" aria-label="City" className="h-11 rounded-xl border border-line bg-surface px-3" />
       {notice ? <p className="text-sm text-muted">{notice}</p> : null}
-      <button type="submit" disabled={save.isPending} className="h-11 rounded-xl bg-ink text-sm font-semibold text-white disabled:opacity-50">Save company</button>
+      <button type="submit" disabled={save.isPending} className="h-11 rounded-xl bg-ink text-sm font-semibold text-white disabled:opacity-50">Submit company change</button>
     </form>
   );
 }
