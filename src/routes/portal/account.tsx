@@ -5,12 +5,22 @@ import { usePortalSession } from "@/lib/portal/use-portal-session";
 import { saveShopProfile } from "@/lib/portal/api";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { useShopToken } from "@/lib/portal/shop-session";
+import { CsrAccountContext } from "@/components/csr-account-context";
 
 export const Route = createFileRoute("/portal/account")({
   component: AccountPage,
 });
 
 function AccountPage() {
+  const session = usePortalSession();
+  const token = useShopToken();
+  if(session.isPending) return <p className="text-sm text-muted">Loading account…</p>;
+  if(session.error) return <p role="alert">{session.error.message}</p>;
+  if(!session.data) return <p>Sign in to manage your account.</p>;
+  return <div className="grid gap-8"><AccountForm key={session.data.customer.email} /><section className="rounded-xl border border-line bg-surface p-4"><h2 className="font-semibold">Account access</h2><p className="mt-2 text-sm text-muted">{session.data.organization||session.data.business||'Company not assigned'} · {session.data.access.roleLabel}</p><p className="mt-1 text-sm text-muted">Equipment purchases: {session.data.access.canPurchase?'Enabled':'Disabled'} · Service requests: {session.data.access.canOrderIt||session.data.access.canOrderPhone?'Enabled':'Disabled'} · Invoice terms: {session.data.access.canDefer?'Approved':'Not approved'}</p></section><CsrAccountContext token={token}/></div>;
+}
+
+function AccountForm() {
   const token = useShopToken();
   const session = usePortalSession();
   const user = useCurrentUser();

@@ -1,7 +1,8 @@
 import { getSql, type Sql } from "@/lib/db";
 import { authorizeAgentKey } from "@/lib/portal/agent-keys";
 import { ALTERNATIVE_PORTAL, createAlternativeCheckout, loadAlternativeCreds } from "@/lib/portal/alternative";
-import { filePortalTicket, settleNewOrder, syncCustomerTicket } from "@/lib/portal/api";
+import { filePortalTicket, settleNewOrder, syncCustomerTicket, updateCsrTicket } from "@/lib/portal/api";
+import { authorizeCsrSession, createCsrSession, customerContext, CsrError, handleCsrResource, runConfirmedAction } from "./csr-store";
 import { resolveMail, setInventory } from "@/lib/portal/commerce";
 import { unpaidCardStatus, verificationDecision } from "@/lib/portal/security";
 
@@ -147,11 +148,15 @@ async function redeemHandoff(request: Request) {
     update agent_handoffs
     set used_at = now()
     where code = ${code} and used_at is null and expires_at > now()
-    returning customer_id, email, name, phone, business, organization, role
+    returning customer_id, email, name, phone, business, organization, role, portal_token_hash, auth_session_id
   `;
   const row = rows[0];
   if (!row) return json({ error: "Handoff expired." }, 401);
+  let agentToken: string;
+  try { agentToken = await createCsrSession(sql, n(row, "customer_id"), s(row, "portal_token_hash"), s(row,"auth_session_id")); }
+  catch { return json({ error: "Portal session expired. Reopen support from the portal." }, 401); }
   return json({
+    agentToken,
     id: n(row, "customer_id"),
     email: s(row, "email"),
     name: s(row, "name"),
@@ -169,7 +174,10 @@ export async function handleAgentRequest(request: Request) {
   if (parts[0] === "handoff" && parts[1] === "redeem" && request.method === "POST") {
     return redeemHandoff(request);
   }
-  const auth = await authorizeAgentKey(request.headers.get("authorization") || "");
+  const header = request.headers.get("authorization") || "";
+  const auth = header.replace(/^Bearer\s+/i, "").startsWith("csr_")
+    ? await authorizeCsrSession(await getSql(), header)
+    : await authorizeAgentKey(header);
   if (!auth) return json({ error: "Unauthorized. Send Authorization: Bearer with an mts_ key from /docs." }, 401);
   const sql = auth.sql;
   try {
@@ -178,6 +186,8 @@ export async function handleAgentRequest(request: Request) {
       values (${`key:${auth.id}`}, ${auth.name}, ${request.method}, ${url.pathname}, '')
     `;
     if (parts[0] !== "customers") return json({ error: "Unknown path. See /api/openapi.json." }, 404);
+    if (auth.scope === "customer" && (!('customerId' in auth) || String(auth.customerId) !== parts[1] || parts.length < 2)) return json({ error: "This session can access only its own account." }, 403);
+    if (request.method === "DELETE" || parts[4] === "delete") return json({ error: "Permanent deletion is not available through CSR support." }, 403);
     if (parts.length === 1 && request.method === "GET") {
       const q = url.searchParams.get("q")?.trim().slice(0, 80) || "";
       const like = `%${q.replace(/%/g, "")}%`;
@@ -252,12 +262,15 @@ export async function handleAgentRequest(request: Request) {
     const row = await customer(sql, id);
     if (!row) return json({ error: "No customer with that id." }, 404);
     const flags = await access(sql, row);
-    const elevated = auth.scope === "super_admin";
+    const elevated = false; // Staff credentials never override the selected customer's purchasing grants.
     const email = s(row, "email");
     const name = s(row, "name");
     const orgId = s(row, "organization_id") ? n(row, "organization_id") : null;
 
-    if (parts.length === 2 && request.method === "GET") return json(profile(row, flags));
+    const execute = async (): Promise<Response> => {
+    const extra = await handleCsrResource(request, sql, id, orgId, flags);
+    if (extra) return extra;
+    if (parts.length === 2 && request.method === "GET") return json({ ...profile(row, flags), organizationId: orgId, context: await customerContext(sql, id) });
     if (parts.length === 2 && request.method === "DELETE") {
       await sql`delete from customer_notices where shop_customer_id = ${id}`;
       await sql`delete from complaints where shop_customer_id = ${id}`;
@@ -382,7 +395,7 @@ export async function handleAgentRequest(request: Request) {
         page: "/portal/shop",
         canShop: flags.canShop || elevated,
         canPurchase: flags.canPurchase || elevated,
-        payLater: flags.canDefer || b(row, "pay_later"),
+        payLater: flags.canDefer,
         query: q,
         equipment,
         services: [
@@ -438,30 +451,8 @@ export async function handleAgentRequest(request: Request) {
       const phone = clip(body.phone, 40) || s(row, "phone");
       const city = clip(body.city, 80) || s(row, "city");
       if (!business) return json({ error: "Enter the company name." }, 400);
-      let organizationId = orgId;
-      if (organizationId) {
-        await sql`update organizations set name = ${business}, phone = ${phone} where id = ${organizationId}`;
-      } else {
-        const created = await sql<Row>`
-          insert into organizations (name, phone, portal_access, ordering_enabled, notes)
-          values (${business}, ${phone}, true, true, 'Updated from the customer portal.')
-          returning id
-        `;
-        organizationId = n(created[0], "id");
-      }
-      await sql`
-        update shop_customers set business_name = ${business}, phone = ${phone}, city = ${city}, organization_id = ${organizationId}
-        where id = ${id}
-      `;
-      const ticket = await filePortalTicket(sql, {
-        name,
-        email,
-        organizationId,
-        subject: `Company update: ${business}`,
-        category: "Account",
-        body: `${name} updated their portal.\nCompany: ${business}\nPhone: ${phone}\nCity: ${city}`,
-      });
-      return json({ ok: true, ticketId: ticket.ticketId, zendeskId: ticket.zendeskId });
+      const ticket=await filePortalTicket(sql,{name,email,organizationId:orgId,subject:`Company change review: ${business}`,category:"Account",body:`Requested company name: ${business}\nPhone: ${phone}\nCity: ${city}\nSubmitted by: ${name} (${email}). Staff approval is required before shared company records change.`});
+      return json({submitted:true,approvalPending:true,ticketId:ticket.ticketId,zendeskId:ticket.zendeskId});
     }
 
     if (parts[2] === "tickets" && parts.length === 3 && request.method === "GET") {
@@ -489,7 +480,7 @@ export async function handleAgentRequest(request: Request) {
       if (!subject || !text) return json({ error: "Subject and body are required." }, 400);
       const category = clip(body.category, 80) || "IT support";
       const detail = [`Category: ${category}`, body.device ? `Device: ${clip(body.device, 120)}` : "", text].filter(Boolean).join("\n");
-      const ticket = await filePortalTicket(sql, { name, email, organizationId: orgId, subject, category, body: detail });
+      const ticket = await filePortalTicket(sql, { name, email, organizationId: orgId, subject, category, body: detail, priority: clip(body.severity, 20) });
       return json(ticket);
     }
     if (parts[2] === "tickets" && parts.length === 4 && request.method === "GET") {
@@ -514,9 +505,7 @@ export async function handleAgentRequest(request: Request) {
       const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
       const text = clip(body.body, 4000);
       if (!text) return json({ error: "Write a reply." }, 400);
-      await sql`insert into ticket_comments (ticket_id, author_name, body, public_note) values (${ticketId}, ${name || "Customer"}, ${text}, true)`;
-      const copy = await filePortalTicket(sql, { name, email, organizationId: orgId, subject: `Mike reply on ticket ${ticketId}`, category: "Chat", body: text });
-      return json({ ok: true, ticketId: copy.ticketId, zendeskId: copy.zendeskId });
+      return json(await updateCsrTicket(sql, email, ticketId, { body: text }));
     }
 
     if (parts[2] === "orders" && parts.length === 3 && request.method === "GET") {
@@ -561,7 +550,7 @@ export async function handleAgentRequest(request: Request) {
       const country = clip(body.country, 80) || s(row, "country") || "United States";
       if (!address || !city || !postal) return json({ error: "A shipping address, city, and postal code are required." }, 400);
       const wantLater = body.payLater === true || body.paymentMethod === "pay_later";
-      const mayDefer = flags.canDefer || b(row, "pay_later");
+      const mayDefer = flags.canDefer;
       if (wantLater && !mayDefer && !elevated) return json({ error: "This account has to pay before the order is placed." }, 403);
       const method = wantLater || ((!flags.canPayNow && mayDefer) || (elevated && wantLater)) ? "pay_later" : "card";
       if (method === "card" && !flags.canPayNow && !elevated) return json({ error: "This account cannot pay immediately." }, 403);
@@ -747,12 +736,17 @@ export async function handleAgentRequest(request: Request) {
       return json(await syncCustomerTicket(sql, email, ticketId));
     }
 
+    if (parts[2] === "tickets" && parts[4] === "escalate" && request.method === "POST") {
+      const body = await request.json() as Record<string,unknown>;
+      const reason = clip(body.reason,2000);
+      if(!reason) return json({error:"An escalation summary is required."},400);
+      return json(await updateCsrTicket(sql,email,Number(parts[3]),{body:`Escalation requested: ${reason}`,escalate:true}));
+    }
     if (parts[2] === "tickets" && parts[4] === "close" && request.method === "POST") {
       const ticketId = Number(parts[3]);
       const tickets = await sql<Row>`select id from tickets where id = ${ticketId} and lower(requester_email) = lower(${email})`;
       if (!tickets[0]) return json({ error: "That ticket is not on this account." }, 404);
-      await sql`update tickets set status = 'closed', updated_at = now() where id = ${ticketId}`;
-      return json({ closed: true, ticketId });
+      return json(await updateCsrTicket(sql, email, ticketId, { status: "solved" }));
     }
 
     if (parts[2] === "services" && parts[3] === "catalog" && request.method === "GET") {
@@ -810,15 +804,23 @@ export async function handleAgentRequest(request: Request) {
       const phoneService = offering.startsWith("voip") || offering.startsWith("fax");
       if (phoneService && !flags.canOrderPhone && !elevated) return json({ error: "This account cannot order phone service." }, 403);
       if (!phoneService && !flags.canOrderIt && !elevated) return json({ error: "This account cannot order that service." }, 403);
-      const site = clip(body.site, 200);
+      const quantity = Number(body.quantity ?? 1);
+      if(!Number.isInteger(quantity)||quantity<1||quantity>99)return json({error:"Quantity must be from 1 to 99."},400);
+      const siteId=clip(body.siteId,80)||null;
+      const sites=siteId?await sql<Row>`select address,city,region,postal from csr_sites where id=${siteId} and customer_id=${id}`:[];
+      if(siteId&&!sites[0])return json({error:"Site not found on this account."},404);
+      const site = sites[0]?[sites[0].address,sites[0].city,sites[0].region,sites[0].postal].filter(Boolean).join(', '):clip(body.site, 200);
       const recipientEmail = clip(body.recipientEmail, 160).toLowerCase();
       const drops = Math.min(50, Math.max(1, Number(body.drops) || 1));
       if (offering === "voip-ext" && body.confirmMonthly !== true) return json({ error: "Confirm the $18 monthly extension before this is sent." }, 400);
       if (offering === "fax-efax" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) return json({ error: "Enter the email that should receive incoming faxes." }, 400);
       if ((offering === "network" || offering.startsWith("internet")) && !site) return json({ error: "Enter the office address." }, 400);
       const label = OFFERINGS[offering];
+      const actionId=request.headers.get("X-MTS-Action-Id")||"";
+      const consent={actionId,quantity,monthlyCents:offering==="voip-ext"?quantity*1800:0,terms:offering==="voip-ext"?"$18 per month per extension; Telxent confirmation required.":"Service request subject to approval and scheduling."};
       const detail = [
         `Service: ${label}`,
+        `Quantity: ${quantity}`,
         site ? `Site: ${site}` : "",
         recipientEmail ? `Incoming fax email: ${recipientEmail}` : "",
         offering === "voip-ext" ? "Customer confirmed $18 per month on the Telxent bill." : "",
@@ -827,12 +829,12 @@ export async function handleAgentRequest(request: Request) {
         clip(body.notes, 1000),
       ].filter(Boolean).join("\n");
       const inserted = await sql<Row>`
-        insert into service_requests (shop_customer_id, organization_id, category, service_name, details, severity, status)
-        values (${id}, ${orgId}, ${offering}, ${label}, ${detail}, 'normal', 'requested')
+        insert into service_requests (shop_customer_id, organization_id, category, service_name, details, severity, status,quantity,site_id,assigned_users,recipients_json,handset_sku,consent_json,monthly_cents)
+        values (${id}, ${orgId}, ${offering}, ${label}, ${detail}, 'normal', 'requested',${quantity},${siteId},${clip(body.assignedUsers,1000)},${JSON.stringify(recipientEmail?[recipientEmail]:[])},${clip(body.handsetSku,80)},${JSON.stringify(consent)},${offering==='voip-ext'?quantity*1800:0})
         returning id
       `;
       const ticket = await filePortalTicket(sql, { name, email, organizationId: orgId, subject: `Order: ${label}`, category: offering, body: detail });
-      return json({ id: n(inserted[0], "id"), ticketId: ticket.ticketId, zendeskId: ticket.zendeskId });
+      return json({ id: n(inserted[0], "id"), ticketId: ticket.ticketId, zendeskId: ticket.zendeskId, status:"requested", quantity, activationConfirmed:false });
     }
 
     if (parts[2] === "quotes" && request.method === "POST") {
@@ -892,8 +894,10 @@ export async function handleAgentRequest(request: Request) {
     }
 
     return json({ error: "Unknown path. See /api/openapi.json." }, 404);
+    };
+    return await runConfirmedAction(request, sql, id, flags, execute);
   } catch (error) {
     const message = error instanceof Error ? error.message : "The agent call failed.";
-    return json({ error: message }, 500);
+    return json({ error: message }, error instanceof CsrError ? error.status : 500);
   }
 }

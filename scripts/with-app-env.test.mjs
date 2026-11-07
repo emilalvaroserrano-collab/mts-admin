@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -24,6 +24,13 @@ function makeWorkspace(appEnvJson) {
     writeFileSync(join(root, APP_ENV_REL_PATH), appEnvJson);
   }
   return root;
+}
+
+function makeTemplateWrapper() {
+  const root = makeWorkspace('{"VITE_AUTH_ENABLED":"false"}');
+  mkdirSync(join(root, "scripts"));
+  copyFileSync(WRAPPER, join(root, "scripts/with-app-env.mjs"));
+  return join(root, "scripts/with-app-env.mjs");
 }
 
 test("keeps VITE_-prefixed string entries", () => {
@@ -59,8 +66,8 @@ test("an explicit process-env override wins over the file", () => {
   assert.equal(merged.PATH, "/usr/bin");
 });
 
-test("the template ships auth off", () => {
-  assert.deepEqual(readAppEnv(projectRoot()), { VITE_AUTH_ENABLED: "false" });
+test("the template fixture reads auth off without constraining the deployed app", () => {
+  assert.deepEqual(readAppEnv(makeWorkspace('{"VITE_AUTH_ENABLED":"false"}')), { VITE_AUTH_ENABLED: "false" });
 });
 
 test("vite loadEnv resolves the wrapped value", () => {
@@ -75,7 +82,7 @@ test("vite loadEnv resolves the wrapped value", () => {
 
 test("the wrapped command runs with the app env applied", async () => {
   const { stdout } = await execFileAsync(process.execPath, [
-    WRAPPER,
+    makeTemplateWrapper(),
     process.execPath,
     "-e",
     PRINT_FLAG,
@@ -117,7 +124,8 @@ test("the CLI still runs when invoked through a symlinked path", async () => {
   // node realpaths import.meta.url but not process.argv[1], so a raw comparison
   // turns the wrapper into a no-op that exits 0 without starting anything.
   const link = join(mkdtempSync(join(tmpdir(), "app-env-link-")), "scripts");
-  symlinkSync(join(projectRoot(), "scripts"), link);
+  const wrapper = makeTemplateWrapper();
+  symlinkSync(join(wrapper, ".."), link);
   const { stdout } = await execFileAsync(process.execPath, [
     join(link, "with-app-env.mjs"),
     process.execPath,

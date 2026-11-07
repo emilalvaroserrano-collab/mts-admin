@@ -870,8 +870,9 @@ async function openWelcomeTicket(
 
 export async function filePortalTicket(
   sql: Sql,
-  input: { name: string; email: string; organizationId: number | null; subject: string; category: string; body: string },
+  input: { name: string; email: string; organizationId: number | null; subject: string; category: string; body: string; priority?: string },
 ) {
+  const priority = ["low", "normal", "high", "urgent"].includes(input.priority || "") ? input.priority! : "normal";
   const recent = await sql<Row>`
     select id, zendesk_id from tickets
     where lower(requester_email) = lower(${input.email})
@@ -884,7 +885,7 @@ export async function filePortalTicket(
   const inserted = await sql<Row>`
     insert into tickets (subject, status, priority, category, organization_id, requester_name, requester_email, tags, view_label)
     values (
-      ${input.subject}, 'new', 'normal', ${input.category}, ${input.organizationId},
+      ${input.subject}, 'new', ${priority}, ${input.category}, ${input.organizationId},
       ${input.name}, ${input.email}, 'portal,customer', ''
     )
     returning id
@@ -909,6 +910,7 @@ export async function filePortalTicket(
           comment: { body: input.body },
           tags: ["portal", "customer"],
           status: "new",
+          priority,
           requester: { name: input.name || input.email, email: input.email },
         },
       }),
@@ -920,6 +922,27 @@ export async function filePortalTicket(
     await enqueueJob(sql, "zendesk_ticket", `ticket-${ticketId}`, { ticketId });
   }
   return { ticketId, zendeskId };
+}
+
+/** Update the existing Zendesk thread. Never create a second ticket for a reply. */
+export async function updateCsrTicket(sql: Sql, email: string, ticketId: number, change: { body?: string; status?: "solved"; escalate?: boolean }) {
+  const rows = await sql<Row>`select id,zendesk_id,requester_name,status,priority from tickets where id=${ticketId} and lower(requester_email)=lower(${email})`;
+  const ticket = rows[0];
+  if (!ticket) throw new Error("That ticket is not on this account.");
+  const zendeskId = s(ticket,"zendesk_id");
+  const settings = await readZendesk(sql);
+  if (zendeskId) {
+    if (!supportConnected(settings)) throw new Error("Zendesk is unavailable. This ticket was not changed; the desk must reconcile it.");
+    const update: Record<string, unknown> = {};
+    if(change.body) update.comment={body:change.body,public:true};
+    if(change.status) update.status=change.status;
+    if(change.escalate) { update.priority="high"; update.status="open"; }
+    await zendesk(settings,`/tickets/${encodeURIComponent(zendeskId)}.json`,{method:"PUT",body:JSON.stringify({ticket:update})});
+  }
+  if(change.body) await sql`insert into ticket_comments(ticket_id,author_name,body,public_note) values(${ticketId},${s(ticket,"requester_name")||"Customer"},${change.body},true)`;
+  await sql`update tickets set status=${change.escalate?"open":change.status||s(ticket,"status")},priority=${change.escalate?"high":s(ticket,"priority")},updated_at=now() where id=${ticketId}`;
+  if(!zendeskId) await enqueueJob(sql,"zendesk_ticket",`ticket-${ticketId}`,{ticketId});
+  return {ticketId,zendeskId,syncStatus:zendeskId?"synced":"pending",status:change.escalate?"open":change.status||s(ticket,"status"),escalated:change.escalate===true};
 }
 
 export const getSessionHome = createServerFn({ method: "GET" })
@@ -977,7 +1000,8 @@ export const openPortalFromAuth = createServerFn({ method: "GET" })
         )
       `;
     }
-    const token = await newShopToken();
+    const live=await sql<Row>`select session_token from shop_customers where email=${email} and session_expires>now() and session_token<>''`;
+    const token = live[0]?s(live[0],"session_token"):await newShopToken();
     await sql`
       update shop_customers set
         session_token = ${token},
@@ -1003,30 +1027,13 @@ export const savePortalCompany = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await getSql();
     const { row } = await requirePortal(sql, data.token);
-    let organizationId = nid(row, "organization_id");
-    if (organizationId) {
-      await sql`update organizations set name = ${data.business}, phone = ${data.phone} where id = ${organizationId}`;
-    } else {
-      const created = await sql<Row>`
-        insert into organizations (name, phone, portal_access, ordering_enabled, notes)
-        values (${data.business}, ${data.phone}, true, true, 'Updated from the customer portal.')
-        returning id
-      `;
-      organizationId = n(created[0], "id");
-    }
-    await sql`
-      update shop_customers set business_name = ${data.business}, phone = ${data.phone}, city = ${data.city}, organization_id = ${organizationId}
-      where id = ${n(row, "id")}
-    `;
-    await filePortalTicket(sql, {
-      name: s(row, "name"),
-      email: s(row, "email"),
-      organizationId,
-      subject: `Company update: ${data.business}`,
-      category: "Account",
-      body: `${s(row, "name")} updated their portal.\nCompany: ${data.business}\nPhone: ${data.phone}\nCity: ${data.city}`,
-    }).catch(() => undefined);
-    return { ok: true };
+    const organizationId = nid(row, "organization_id");
+    const ticket=await filePortalTicket(sql,{
+      name:s(row,"name"),email:s(row,"email"),organizationId,
+      subject:`Company change review: ${data.business}`,category:"Account",
+      body:`Requested company name: ${data.business}\nPhone: ${data.phone}\nCity: ${data.city}\nSubmitted by: ${s(row,"name")} (${s(row,"email")}). Staff approval is required before shared company records change.`
+    });
+    return {ok:true,approvalPending:true,ticketId:ticket.ticketId};
   });
 
 function viewFromTags(tags: string[]) {
@@ -4042,11 +4049,15 @@ export const getPortalSession = createServerFn({ method: "GET" })
   });
 
 export const issueAgentHandoff = createServerFn({ method: "POST" })
+  .middleware([authMiddleware])
   .validator((token: string) => str(token, 80))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const sql = await getSql();
     const row = await shopByToken(sql, data);
     if (!row) throw new Error("Sign in again.");
+    const {getSessionUser}=await import("@/lib/auth/verify.server");
+    const session=await getSessionUser((context as {userId:string;bearerToken?:string}).bearerToken);
+    if(!session||session.id!==context.userId||session.email?.toLowerCase()!==s(row,"email").toLowerCase())throw new Error("Reopen support from your signed-in portal account.");
     const access = await accessFor(sql, row);
     const orgId = nid(row, "organization_id");
     const orgs = orgId ? await sql<Row>`select name from organizations where id = ${orgId}` : [];
@@ -4067,7 +4078,7 @@ export const issueAgentHandoff = createServerFn({ method: "POST" })
       )
     `;
     await sql`
-      insert into agent_handoffs (code, customer_id, email, name, phone, business, organization, role, expires_at)
+      insert into agent_handoffs (code, customer_id, email, name, phone, business, organization, role, expires_at, portal_token_hash, auth_session_id)
       values (
         ${code},
         ${n(row, "id")},
@@ -4077,7 +4088,9 @@ export const issueAgentHandoff = createServerFn({ method: "POST" })
         ${s(row, "business_name")},
         ${orgs[0] ? s(orgs[0], "name") : ""},
         ${access.roleLabel},
-        now() + interval '15 minutes'
+        now() + interval '15 minutes',
+        ${await (await import("./csr-store")).digest(data)},
+        ${session.sessionId}
       )
     `;
     return { code };
@@ -4775,7 +4788,9 @@ export const orderPortalOffering = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => {
     const sql = await getSql();
-    const { row } = await requirePortal(sql, data.token);
+    const { row, access } = await requirePortal(sql, data.token);
+    const phoneService = data.offering.startsWith("voip") || data.offering.startsWith("fax");
+    if(phoneService?!access.canOrderPhone:!access.canOrderIt)throw new Error("This account is not authorized to order that service.");
     const item = ORDER_OFFERINGS[data.offering];
     if (data.offering === "voip-ext" && !data.confirmMonthly) {
       throw new Error("Confirm the $18 monthly extension before this can be sent to Telxent.");

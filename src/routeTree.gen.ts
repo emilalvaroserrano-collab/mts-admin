@@ -16,6 +16,7 @@ import { Route as PortalRouteImport } from './routes/portal'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAccessRouteImport } from './routes/_app/access'
 import { Route as AppCampaignsRouteImport } from './routes/_app/campaigns'
+import { Route as AppCsrRouteImport } from './routes/_app/csr'
 import { Route as AppDocsRouteImport } from './routes/_app/docs'
 import { Route as AppFormsRouteImport } from './routes/_app/forms'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
@@ -25,6 +26,8 @@ import { Route as AppRolesRouteImport } from './routes/_app/roles'
 import { Route as AppServicesRouteImport } from './routes/_app/services'
 import { Route as AppSettingsRouteImport } from './routes/_app/settings'
 import { Route as AppUsersRouteImport } from './routes/_app/users'
+import { Route as ApiCsrEventsRouteImport } from './routes/api/csr-events'
+import { Route as ApiCsrJobsRouteImport } from './routes/api/csr-jobs'
 import { Route as ApiOpenapiDotjsonRouteImport } from './routes/api/openapi[.]json'
 import { Route as AuthPopupRouteImport } from './routes/auth/popup'
 import { Route as PortalIndexRouteImport } from './routes/portal/index'
@@ -102,6 +105,11 @@ const AppCampaignsRoute = AppCampaignsRouteImport.update({
   path: '/campaigns',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCsrRoute = AppCsrRouteImport.update({
+  id: '/csr',
+  path: '/csr',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDocsRoute = AppDocsRouteImport.update({
   id: '/docs',
   path: '/docs',
@@ -146,6 +154,16 @@ const AppUsersRoute = AppUsersRouteImport.update({
   id: '/users',
   path: '/users',
   getParentRoute: () => AppRoute,
+} as any)
+const ApiCsrEventsRoute = ApiCsrEventsRouteImport.update({
+  id: '/api/csr-events',
+  path: '/api/csr-events',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCsrJobsRoute = ApiCsrJobsRouteImport.update({
+  id: '/api/csr-jobs',
+  path: '/api/csr-jobs',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiOpenapiDotjsonRoute = ApiOpenapiDotjsonRouteImport.update({
   id: '/api/openapi.json',
@@ -366,6 +384,7 @@ export interface FileRoutesByFullPath {
   '/portal': typeof PortalRouteWithChildren
   '/access': typeof AppAccessRoute
   '/campaigns': typeof AppCampaignsRoute
+  '/csr': typeof AppCsrRoute
   '/docs': typeof AppDocsRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
@@ -375,6 +394,8 @@ export interface FileRoutesByFullPath {
   '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
+  '/api/csr-events': typeof ApiCsrEventsRoute
+  '/api/csr-jobs': typeof ApiCsrJobsRoute
   '/api/openapi.json': typeof ApiOpenapiDotjsonRoute
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
@@ -423,6 +444,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/access': typeof AppAccessRoute
   '/campaigns': typeof AppCampaignsRoute
+  '/csr': typeof AppCsrRoute
   '/docs': typeof AppDocsRoute
   '/forms': typeof AppFormsRoute
   '/integrations': typeof AppIntegrationsRoute
@@ -432,6 +454,8 @@ export interface FileRoutesByTo {
   '/services': typeof AppServicesRoute
   '/settings': typeof AppSettingsRoute
   '/users': typeof AppUsersRoute
+  '/api/csr-events': typeof ApiCsrEventsRoute
+  '/api/csr-jobs': typeof ApiCsrJobsRoute
   '/api/openapi.json': typeof ApiOpenapiDotjsonRoute
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
@@ -484,6 +508,7 @@ export interface FileRoutesById {
   '/portal': typeof PortalRouteWithChildren
   '/_app/access': typeof AppAccessRoute
   '/_app/campaigns': typeof AppCampaignsRoute
+  '/_app/csr': typeof AppCsrRoute
   '/_app/docs': typeof AppDocsRoute
   '/_app/forms': typeof AppFormsRoute
   '/_app/integrations': typeof AppIntegrationsRoute
@@ -493,6 +518,8 @@ export interface FileRoutesById {
   '/_app/services': typeof AppServicesRoute
   '/_app/settings': typeof AppSettingsRoute
   '/_app/users': typeof AppUsersRoute
+  '/api/csr-events': typeof ApiCsrEventsRoute
+  '/api/csr-jobs': typeof ApiCsrJobsRoute
   '/api/openapi.json': typeof ApiOpenapiDotjsonRoute
   '/auth/popup': typeof AuthPopupRoute
   '/portal/account': typeof PortalAccountRoute
@@ -546,6 +573,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/access'
     | '/campaigns'
+    | '/csr'
     | '/docs'
     | '/forms'
     | '/integrations'
@@ -555,6 +583,8 @@ export interface FileRouteTypes {
     | '/services'
     | '/settings'
     | '/users'
+    | '/api/csr-events'
+    | '/api/csr-jobs'
     | '/api/openapi.json'
     | '/auth/popup'
     | '/portal/account'
@@ -603,6 +633,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/access'
     | '/campaigns'
+    | '/csr'
     | '/docs'
     | '/forms'
     | '/integrations'
@@ -612,6 +643,8 @@ export interface FileRouteTypes {
     | '/services'
     | '/settings'
     | '/users'
+    | '/api/csr-events'
+    | '/api/csr-jobs'
     | '/api/openapi.json'
     | '/auth/popup'
     | '/portal/account'
@@ -663,6 +696,7 @@ export interface FileRouteTypes {
     | '/portal'
     | '/_app/access'
     | '/_app/campaigns'
+    | '/_app/csr'
     | '/_app/docs'
     | '/_app/forms'
     | '/_app/integrations'
@@ -672,6 +706,8 @@ export interface FileRouteTypes {
     | '/_app/services'
     | '/_app/settings'
     | '/_app/users'
+    | '/api/csr-events'
+    | '/api/csr-jobs'
     | '/api/openapi.json'
     | '/auth/popup'
     | '/portal/account'
@@ -722,6 +758,8 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   PortalRoute: typeof PortalRouteWithChildren
+  ApiCsrEventsRoute: typeof ApiCsrEventsRoute
+  ApiCsrJobsRoute: typeof ApiCsrJobsRoute
   ApiOpenapiDotjsonRoute: typeof ApiOpenapiDotjsonRoute
   AuthPopupRoute: typeof AuthPopupRoute
   ApiAgentSplatRoute: typeof ApiAgentSplatRoute
@@ -788,6 +826,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCampaignsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/csr': {
+      id: '/_app/csr'
+      path: '/csr'
+      fullPath: '/csr'
+      preLoaderRoute: typeof AppCsrRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/docs': {
       id: '/_app/docs'
       path: '/docs'
@@ -850,6 +895,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/users'
       preLoaderRoute: typeof AppUsersRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/api/csr-events': {
+      id: '/api/csr-events'
+      path: '/api/csr-events'
+      fullPath: '/api/csr-events'
+      preLoaderRoute: typeof ApiCsrEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/csr-jobs': {
+      id: '/api/csr-jobs'
+      path: '/api/csr-jobs'
+      fullPath: '/api/csr-jobs'
+      preLoaderRoute: typeof ApiCsrJobsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/openapi.json': {
       id: '/api/openapi.json'
@@ -1151,6 +1210,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppAccessRoute: typeof AppAccessRoute
   AppCampaignsRoute: typeof AppCampaignsRoute
+  AppCsrRoute: typeof AppCsrRoute
   AppDocsRoute: typeof AppDocsRoute
   AppFormsRoute: typeof AppFormsRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
@@ -1174,6 +1234,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAccessRoute: AppAccessRoute,
   AppCampaignsRoute: AppCampaignsRoute,
+  AppCsrRoute: AppCsrRoute,
   AppDocsRoute: AppDocsRoute,
   AppFormsRoute: AppFormsRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
@@ -1252,6 +1313,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   PortalRoute: PortalRouteWithChildren,
+  ApiCsrEventsRoute: ApiCsrEventsRoute,
+  ApiCsrJobsRoute: ApiCsrJobsRoute,
   ApiOpenapiDotjsonRoute: ApiOpenapiDotjsonRoute,
   AuthPopupRoute: AuthPopupRoute,
   ApiAgentSplatRoute: ApiAgentSplatRoute,
