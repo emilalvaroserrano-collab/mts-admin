@@ -63,12 +63,12 @@ function AgentMark({ className = "size-11" }: { className?: string }) {
 
 function AudioBars({ levels, wide = false }: { levels: number[]; wide?: boolean }) {
   const count = wide ? 14 : 7;
+  const height = wide ? 28 : 32;
   return (
-    <span className={wide ? "flex h-8 w-full items-end gap-1" : "flex h-8 w-8 items-end gap-[3px]"} aria-hidden="true">
+    <span className={wide ? "flex h-8 w-full items-end gap-[3px]" : "flex h-8 w-full items-end justify-center gap-[3px]"} aria-hidden="true">
       {Array.from({ length: count }, (_, index) => {
-        const level = levels[index] ?? levels[index % Math.max(levels.length, 1)] ?? 0;
-        const scale = 0.14 + Math.min(100, level) / 116;
-        return <span key={index} className="block h-full min-w-[4px] flex-1 origin-bottom rounded-full bg-accent" style={{ transform: `scaleY(${scale})` }} />;
+        const level = levels[index] ?? 0;
+        return <span key={index} className="block w-full min-w-[3px] flex-1 rounded-full bg-accent" style={{ height: `${Math.max(3, Math.round((level / 100) * height))}px` }} />;
       })}
     </span>
   );
@@ -188,7 +188,7 @@ export function SarahWidget() {
     <>
       {sessionLive ? (
         <div
-          className={full ? "fixed inset-0 z-50 flex md:inset-auto md:right-4 md:bottom-24 md:h-[min(100dvh-8rem,40rem)] md:w-[24rem]" : "pointer-events-none fixed bottom-0 left-0 z-40 h-[720px] w-[390px] -translate-x-[120vw]"}
+          className={full ? "fixed inset-0 z-50 flex md:inset-auto md:right-4 md:bottom-24 md:h-[min(100dvh-8rem,40rem)] md:w-[24rem]" : "pointer-events-none fixed bottom-0 left-0 z-40 h-px w-px overflow-hidden opacity-0"}
           style={full && wide ? place : undefined}
         >
           <section className="grid h-full min-h-0 w-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-surface md:rounded-2xl md:shadow-2xl">
