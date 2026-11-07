@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { useCurrentUser } from "@/lib/auth/use-current-user";
 import { usePortalSession } from "@/lib/portal/use-portal-session";
-import deskHtml from "./call-desk.html?raw";
 
 export const Route = createFileRoute("/portal/call")({
   component: CallDesk,
@@ -19,14 +18,16 @@ function CallDesk() {
   const session = usePortalSession();
 
   function publish() {
-    const win = frame.current?.contentWindow as DeskWindow | null;
-    if (!win) return;
     const customer = session.data?.customer;
-    win.MTS_CSR_CONTEXT = {
+    const context = {
       name: user?.displayName || customer?.name || "",
       organization: session.data?.business || session.data?.organization || "",
       role: session.data?.access.roleLabel || "Customer",
     };
+    sessionStorage.setItem("mts-csr-context", JSON.stringify(context));
+    const win = frame.current?.contentWindow as DeskWindow | null;
+    if (!win) return;
+    win.MTS_CSR_CONTEXT = context;
     win.MTS_CSR_NAVIGATE = (route: string) => {
       if (route.startsWith("/portal")) window.location.assign(route);
     };
@@ -40,10 +41,10 @@ function CallDesk() {
   return (
     <iframe
       ref={frame}
-      title="MTS Call Desk"
-      srcDoc={deskHtml}
+      title="Call Sarah"
+      src="/csr-call.html"
       onLoad={publish}
-      allow="microphone; autoplay; clipboard-write"
+      allow="microphone; camera; autoplay; display-capture; clipboard-write"
       className="fixed inset-0 z-50 h-dvh w-full border-0 bg-[#080d16]"
     />
   );
