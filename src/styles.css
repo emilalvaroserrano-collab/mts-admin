@@ -74,6 +74,11 @@
   }
 }
 
+@keyframes mts-bar {
+  0%, 100% { transform: scaleY(0.28); }
+  50% { transform: scaleY(1); }
+}
+
 [data-sonner-toast] {
   background: var(--color-surface) !important;
   color: var(--color-ink) !important;

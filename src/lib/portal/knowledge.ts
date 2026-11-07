@@ -74,7 +74,7 @@ const ARTICLES: { title: string; keywords: string[]; body: string; page: string 
     title: "Equipment and checkout",
     keywords: ["laptop", "equipment", "catalog", "cart", "checkout", "product", "desk phone"],
     page: "shop",
-    body: "Equipment is on the Order page. Mike can find a product and place it in the cart. Checkout is the store checkout, not something he completes by voice. He does not take or store a card number. Some accounts must pay before the order is placed. Accounts with deferred billing may choose Order now, pay later.",
+    body: "Equipment is on the Order page. Sarah searches the live catalog and places the order after the customer confirms the exact product and quantity. She never takes a card number. A pay-now order returns a payment link. Accounts with deferred billing can be invoiced instead.",
   },
   {
     title: "Orders, shipping, and billing",

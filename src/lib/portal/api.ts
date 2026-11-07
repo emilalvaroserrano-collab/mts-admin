@@ -2270,7 +2270,7 @@ export const getOrder = createServerFn({ method: "GET" })
     };
   });
 
-async function settleNewOrder(sql: Sql, orderId: number, actor: string) {
+export async function settleNewOrder(sql: Sql, orderId: number, actor: string) {
   try {
     await reserveOrder(sql, orderId);
   } catch (error) {
@@ -4041,6 +4041,48 @@ export const getPortalSession = createServerFn({ method: "GET" })
     };
   });
 
+export const issueAgentHandoff = createServerFn({ method: "POST" })
+  .validator((token: string) => str(token, 80))
+  .handler(async ({ data }) => {
+    const sql = await getSql();
+    const row = await shopByToken(sql, data);
+    if (!row) throw new Error("Sign in again.");
+    const access = await accessFor(sql, row);
+    const orgId = nid(row, "organization_id");
+    const orgs = orgId ? await sql<Row>`select name from organizations where id = ${orgId}` : [];
+    const { randomBytes } = await import("node:crypto");
+    const code = randomBytes(24).toString("base64url");
+    await sql`
+      create table if not exists agent_handoffs (
+        code text primary key,
+        customer_id integer not null,
+        email text not null,
+        name text not null default '',
+        phone text not null default '',
+        business text not null default '',
+        organization text not null default '',
+        role text not null default '',
+        expires_at timestamptz not null,
+        used_at timestamptz
+      )
+    `;
+    await sql`
+      insert into agent_handoffs (code, customer_id, email, name, phone, business, organization, role, expires_at)
+      values (
+        ${code},
+        ${n(row, "id")},
+        ${s(row, "email")},
+        ${s(row, "name")},
+        ${s(row, "phone")},
+        ${s(row, "business_name")},
+        ${orgs[0] ? s(orgs[0], "name") : ""},
+        ${access.roleLabel},
+        now() + interval '15 minutes'
+      )
+    `;
+    return { code };
+  });
+
 export const getPortalTicket = createServerFn({ method: "GET" })
   .validator((input: unknown) => {
     const raw = obj(input);
@@ -4137,6 +4179,39 @@ export const submitPortalTicket = createServerFn({ method: "POST" })
     return { ticketId, zendeskId, warning };
   });
 
+export async function syncCustomerTicket(sql: Sql, email: string, ticketId: number) {
+  const tickets = await sql<Row>`
+    select * from tickets where id = ${ticketId} and lower(requester_email) = lower(${email})
+  `;
+  const ticket = tickets[0];
+  if (!ticket) return { synced: false, status: "", warning: "That ticket is not on this account." };
+  const zendeskId = s(ticket, "zendesk_id");
+  const settings = await readZendesk(sql);
+  if (!zendeskId || !supportConnected(settings)) {
+    return { synced: false, status: s(ticket, "status"), warning: zendeskId ? "Zendesk is not connected." : "This ticket is not in Zendesk yet." };
+  }
+  const remote = await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}.json`);
+  const body = obj(remote.ticket);
+  const status = zdStatus(String(body.status || s(ticket, "status")));
+  await sql`update tickets set status = ${status}, updated_at = now() where id = ${ticketId}`;
+  const comments = await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}/comments.json`);
+  const list = Array.isArray(comments.comments) ? comments.comments : [];
+  for (const item of list) {
+    const comment = obj(item);
+    const commentId = comment.id != null ? String(comment.id) : "";
+    const text = typeof comment.body === "string" ? comment.body.slice(0, 4000) : "";
+    if (!commentId || !text) continue;
+    const isPublic = commentIsPublic(comment.public);
+    const existing = await sql<Row>`select id from ticket_comments where zendesk_comment_id = ${commentId} limit 1`;
+    if (existing.length) continue;
+    await sql`
+      insert into ticket_comments (ticket_id, author_name, body, public_note, zendesk_comment_id)
+      values (${ticketId}, 'Zendesk', ${text}, ${isPublic}, ${commentId})
+    `;
+  }
+  return { synced: true, status, warning: "" };
+}
+
 export const refreshPortalTicket = createServerFn({ method: "POST" })
   .validator((input: unknown) => {
     const raw = obj(input);
@@ -4148,36 +4223,9 @@ export const refreshPortalTicket = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const sql = await getSql();
     const { row } = await requirePortal(sql, data.token);
-    const tickets = await sql<Row>`
-      select * from tickets where id = ${data.id} and lower(requester_email) = lower(${s(row, "email")})
-    `;
-    const ticket = tickets[0];
-    if (!ticket) throw new Error("That ticket is not on this account.");
-    const zendeskId = s(ticket, "zendesk_id");
-    const settings = await readZendesk(sql);
-    if (!zendeskId || !supportConnected(settings)) {
-      return { synced: false, warning: zendeskId ? "Zendesk is not connected." : "This ticket is not in Zendesk yet." };
-    }
-    const remote = await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}.json`);
-    const body = obj(remote.ticket);
-    const status = zdStatus(String(body.status || s(ticket, "status")));
-    await sql`update tickets set status = ${status}, updated_at = now() where id = ${data.id}`;
-    const comments = await zendesk(settings, `/tickets/${encodeURIComponent(zendeskId)}/comments.json`);
-    const list = Array.isArray(comments.comments) ? comments.comments : [];
-    for (const item of list) {
-      const comment = obj(item);
-      const commentId = comment.id != null ? String(comment.id) : "";
-      const text = typeof comment.body === "string" ? comment.body.slice(0, 4000) : "";
-      if (!commentId || !text) continue;
-      const isPublic = commentIsPublic(comment.public);
-      const existing = await sql<Row>`select id from ticket_comments where zendesk_comment_id = ${commentId} limit 1`;
-      if (existing.length) continue;
-      await sql`
-        insert into ticket_comments (ticket_id, author_name, body, public_note, zendesk_comment_id)
-        values (${data.id}, 'Zendesk', ${text}, ${isPublic}, ${commentId})
-      `;
-    }
-    return { synced: true, warning: "" };
+    const result = await syncCustomerTicket(sql, s(row, "email"), data.id);
+    if (result.warning === "That ticket is not on this account.") throw new Error(result.warning);
+    return { synced: result.synced, warning: result.warning };
   });
 
 const SERVICE_MENU = {

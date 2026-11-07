@@ -96,7 +96,13 @@ export const agentOpenApi = {
       },
     },
     "/api/agent/customers/{id}/orders": {
-      get: { summary: "Orders page shown on /portal/orders", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Orders for this customer id or ship email. Read only." } } },
+      get: { summary: "Orders page shown on /portal/orders", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Orders for this customer id or ship email." } } },
+      post: {
+        summary: "Place an equipment order for this customer from catalog SKUs",
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+        requestBody: { required: true, content: { "application/json": { schema: { type: "object", required: ["items"], properties: { items: { type: "array" }, sku: { type: "string" }, quantity: { type: "integer" }, payLater: { type: "boolean" }, shippingMethod: { type: "string", enum: ["standard", "express"] }, address: { type: "string" }, city: { type: "string" }, region: { type: "string" }, postal: { type: "string" }, notes: { type: "string" } } } } } },
+        responses: { "200": { description: "{ placed, number, totalCents, paymentUrl, paymentMethod, items }. Card numbers are never accepted." } },
+      },
     },
     "/api/agent/customers/{id}/orders/{orderId}": {
       get: { summary: "One order, the /portal/orders/{orderId} page", parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }, { name: "orderId", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Lines, payment, shipment, and tracking. 404 if it is not this customer's." } } },
